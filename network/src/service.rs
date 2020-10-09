@@ -58,6 +58,7 @@ const SEND_DELAYED_MESSAGES: TimerToken = SYS_TIMER + 8;
 const CHECK_SESSIONS: TimerToken = SYS_TIMER + 9;
 const HANDLER_TIMER: TimerToken = LAST_SESSION + 256;
 const STOP_NET_POLL: TimerToken = HANDLER_TIMER + 1;
+const COORDINATE_UPDATE: TimerToken = SYS_TIMER + 10;
 
 pub const DEFAULT_HOUSEKEEPING_TIMEOUT: Duration = Duration::from_secs(2);
 // for DISCOVERY_REFRESH TimerToken
@@ -1490,6 +1491,9 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
         io.message(NetworkIoMessage::Start).unwrap_or_else(|e| {
             warn!("Error sending IO notification: {:?}", e)
         });
+
+        //io.register_timer(COORDINATE_UPDATE, )
+        //    .expect("Error registering housekeeping timer");
     }
 
     fn stream_hup(
@@ -1959,6 +1963,7 @@ impl<'a> NetworkContextTrait for NetworkContext<'a> {
                 });
             match latency {
                 Some(latency) => {
+                    debug!("message latency is {:?}", latency);
                     let q =
                         self.network_service.delayed_queue.as_ref().unwrap();
                     let mut queue = q.queue.lock();

@@ -14,7 +14,7 @@ use crate::{
         message::{
             handle_rlp_message, msgid, Context, DynamicCapability,
             GetBlockHeadersResponse, Heartbeat, NewBlockHashes, StatusV2,
-            StatusV3, TransactionDigests,
+            StatusV3, TransactionDigests, CoordinateMessage,
         },
         node_type::NodeType,
         request_manager::{try_get_block_hashes, Request},
@@ -73,6 +73,7 @@ const CHECK_FUTURE_BLOCK_TIMER: TimerToken = 7;
 const EXPIRE_BLOCK_GC_TIMER: TimerToken = 8;
 const HEARTBEAT_TIMER: TimerToken = 9;
 pub const CHECK_RPC_REQUEST_TIMER: TimerToken = 11;
+const COORDINATE_TIMER: TimerToken = 12;
 
 const MAX_TXS_BYTES_TO_PROPAGATE: usize = 1024 * 1024; // 1MB
 
@@ -1199,6 +1200,18 @@ impl SynchronizationProtocolHandler {
         }
     }
 
+    fn produce_coordinate_message(&self) -> CoordinateMessage {
+        let send_time = SystemTime::now();
+        let send_time_milli = send_time.duration_since(UNIX_EPOCH).expect("cannot convert systime").as_millis();
+        let send_time_milli:u64 = send_time_milli as u64;
+
+        CoordinateMessage {
+            x: 1, 
+            y: 2,
+            send_time_milli,
+        }
+    }
+
     fn produce_heartbeat_message(&self) -> Heartbeat {
         let best_info = self.graph.consensus.best_info();
         let terminal_hashes = best_info.bounded_terminal_block_hashes.clone();
@@ -1241,6 +1254,20 @@ impl SynchronizationProtocolHandler {
             .is_err()
         {
             warn!("Error broadcasting status message");
+        }
+    }
+
+    fn broadcast_coordinate(&self, io: &dyn NetworkContext) {
+        //let status_message = self.produce_status_message_v2();
+        //let heartbeat_message = self.produce_heartbeat_message();
+        let coordinate = self.produce_coordinate_message();
+        debug!("Broadcasting coordinate message: {:?}", coordinate);
+
+        if self
+            .broadcast_message(io, &Default::default(), &coordinate)
+            .is_err()
+        {
+            warn!("Error broadcasting coordinate message");
         }
     }
 
@@ -1553,6 +1580,10 @@ impl SynchronizationProtocolHandler {
         self.broadcast_heartbeat(io);
     }
 
+    pub fn send_coordinate(&self, io: &dyn NetworkContext) {
+        self.broadcast_coordinate(io);
+    }
+
     fn cache_gc(&self) { self.graph.data_man.cache_gc() }
 
     fn log_statistics(&self) { self.graph.log_statistics(); }
@@ -1806,6 +1837,8 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
         .expect("Error registering total_weight_in_past timer");
         io.register_timer(CHECK_PEER_HEARTBEAT_TIMER, Duration::from_secs(60))
             .expect("Error registering CHECK_PEER_HEARTBEAT_TIMER");
+        //io.register_timer(CHECK_PEER_HEARTBEAT_TIMER, Duration::from_secs(60))
+        //    .expect("Error registering CHECK_PEER_HEARTBEAT_TIMER");
         io.register_timer(
             CHECK_FUTURE_BLOCK_TIMER,
             Duration::from_millis(1000),
@@ -1816,6 +1849,11 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
             self.protocol_config.expire_block_gc_period,
         )
         .expect("Error registering EXPIRE_BLOCK_GC_TIMER");
+        io.register_timer(
+            COORDINATE_TIMER,
+            Duration::from_millis(3000),
+        )
+        .expect("Error registering COORDINATE_TIMER");
     }
 
     fn send_local_message(&self, io: &dyn NetworkContext, message: Vec<u8>) {
@@ -1944,6 +1982,10 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
                     self.protocol_config.sync_expire_block_timeout.as_secs(),
                 )
                 .ok();
+            }
+            COORDINATE_TIMER => {
+                debug!("Coordinate timer!");
+                self.send_coordinate(io);
             }
             _ => warn!("Unknown timer {} triggered.", timer),
         }

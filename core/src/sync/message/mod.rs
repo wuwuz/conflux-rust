@@ -17,6 +17,7 @@ mod get_terminal_block_hashes;
 mod get_terminal_block_hashes_response;
 mod handleable;
 mod heartbeat;
+mod coordinate_message;
 mod keys;
 mod message;
 mod metrics;
@@ -50,6 +51,7 @@ pub use self::{
     get_terminal_block_hashes_response::GetTerminalBlockHashesResponse,
     handleable::{Context, Handleable},
     heartbeat::Heartbeat,
+    coordinate_message::CoordinateMessage,
     keys::{Key, KeyContainer},
     message::{handle_rlp_message, msgid},
     new_block::NewBlock,

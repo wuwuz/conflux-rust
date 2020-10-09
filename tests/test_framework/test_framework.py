@@ -94,7 +94,7 @@ class ConfluxTestFramework:
         parser.add_argument(
             "--nocleanup",
             dest="nocleanup",
-            default=False,
+            default=True, # False
             action="store_true",
             help="Leave bitcoinds and test.* datadir on exit or error")
         parser.add_argument(

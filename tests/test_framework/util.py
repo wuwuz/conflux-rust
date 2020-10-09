@@ -572,6 +572,8 @@ def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, t
     It first lets all the nodes link as a loop, then randomly pick 'sample-1'
     outgoing peers for each node.    
     """
+    latency_max = 50
+    latency_min = 50
     peer = [[] for _ in nodes]
     latencies = [{} for _ in nodes]
     threads = []
@@ -583,6 +585,7 @@ def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, t
         next = (i + 1) % num_nodes
         peer[i].append(next)
         lat = random.randint(latency_min, latency_max)
+        #print("latency of ", i, next, "=", lat)
         latencies[i][next] = lat
         latencies[next][i] = lat
 
@@ -592,9 +595,14 @@ def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, t
                 if p not in peer[i] and not p == i:
                     peer[i].append(p)
                     lat = random.randint(latency_min, latency_max)
+                    #print("latency of ", i, p, "=", lat)
                     latencies[i][p] = lat
                     latencies[p][i] = lat
                     break
+    
+    for i in range(len(latencies)):
+            #print(latencies[i][j], end = " ")
+            print(latencies[i])
 
     for i in range(num_nodes):
         t = ConnectThread(nodes, i, peer[i], latencies, log, min_peers=sample)
