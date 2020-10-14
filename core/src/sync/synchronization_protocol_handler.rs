@@ -14,7 +14,7 @@ use crate::{
         message::{
             handle_rlp_message, msgid, Context, DynamicCapability,
             GetBlockHeadersResponse, Heartbeat, NewBlockHashes, StatusV2,
-            StatusV3, TransactionDigests, CoordinateMessage,
+            StatusV3, TransactionDigests, CoordinatePing, CoordinatePong,
         },
         node_type::NodeType,
         request_manager::{try_get_block_hashes, Request},
@@ -46,6 +46,9 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use vivaldi::{
+    vector::Dimension3, *,
 };
 
 lazy_static! {
@@ -374,6 +377,10 @@ pub struct SynchronizationProtocolHandler {
 
     // provider for serving light protocol queries
     light_provider: Arc<LightProvider>,
+
+    // vivaldi algorithm
+    //pub coordinate_db: RwLock<HashMap<H256, vivaldi::Coordinate<Dimension3>>>,
+    //pub vivaldi_model: RwLock<vivaldi::Model<Dimension3>>,
 }
 
 #[derive(Clone, DeriveMallocSizeOf)]
@@ -1200,12 +1207,12 @@ impl SynchronizationProtocolHandler {
         }
     }
 
-    fn produce_coordinate_message(&self) -> CoordinateMessage {
+    fn produce_coordinate_ping(&self) -> CoordinatePing {
         let send_time = SystemTime::now();
         let send_time_milli = send_time.duration_since(UNIX_EPOCH).expect("cannot convert systime").as_millis();
         let send_time_milli:u64 = send_time_milli as u64;
 
-        CoordinateMessage {
+        CoordinatePing {
             x: 1, 
             y: 2,
             send_time_milli,
@@ -1260,7 +1267,7 @@ impl SynchronizationProtocolHandler {
     fn broadcast_coordinate(&self, io: &dyn NetworkContext) {
         //let status_message = self.produce_status_message_v2();
         //let heartbeat_message = self.produce_heartbeat_message();
-        let coordinate = self.produce_coordinate_message();
+        let coordinate = self.produce_coordinate_ping();
         debug!("Broadcasting coordinate message: {:?}", coordinate);
 
         if self

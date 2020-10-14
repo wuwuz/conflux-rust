@@ -54,7 +54,8 @@ build_msgid! {
     STATUS_V2 = 0x22
     STATUS_V3 = 0x23
     HEARTBEAT = 0x24
-    COORDINATE = 0x25
+    COORDINATE_PING = 0x25
+    COORDINATE_PONG = 0x26
 
     // This is only used in inflight_keys.
     NET_INFLIGHT_BLOCKS = 0xf0
@@ -70,7 +71,8 @@ build_msgid! {
 build_msg_impl! { StatusV2, msgid::STATUS_V2, "StatusV2", SYNC_PROTO_V2, SYNC_PROTO_V2 }
 build_msg_impl! { StatusV3, msgid::STATUS_V3, "StatusV3", SYNC_PROTO_V3, SYNC_PROTO_V3 }
 build_msg_impl! { Heartbeat, msgid::HEARTBEAT, "Heartbeat", SYNC_PROTO_V3, SYNC_PROTO_V3 }
-build_msg_impl! { CoordinateMessage, msgid::COORDINATE, "CoordinateMessage", SYNC_PROTO_V3, SYNC_PROTO_V3 }
+build_msg_impl! { CoordinatePing, msgid::COORDINATE_PING, "CoordinatePing", SYNC_PROTO_V3, SYNC_PROTO_V3 }
+build_msg_impl! { CoordinatePong, msgid::COORDINATE_PONG, "CoordinatePong", SYNC_PROTO_V3, SYNC_PROTO_V3 }
 build_msg_impl! { NewBlockHashes, msgid::NEW_BLOCK_HASHES, "NewBlockHashes", SYNC_PROTO_V1, SYNC_PROTO_V3 }
 build_msg_with_request_id_impl! { GetBlockHeaders, msgid::GET_BLOCK_HEADERS, "GetBlockHeaders", SYNC_PROTO_V1, SYNC_PROTO_V3 }
 build_msg_impl! { GetBlockHeadersResponse, msgid::GET_BLOCK_HEADERS_RESPONSE, "GetBlockHeadersResponse", SYNC_PROTO_V1, SYNC_PROTO_V3 }
@@ -191,7 +193,8 @@ pub fn handle_rlp_message(
         msgid::STATUS_V2 => handle_message::<StatusV2>(ctx, rlp)?,
         msgid::STATUS_V3 => handle_message::<StatusV3>(ctx, rlp)?,
         msgid::HEARTBEAT => handle_message::<Heartbeat>(ctx, rlp)?,
-        msgid::COORDINATE => handle_message::<CoordinateMessage>(ctx, rlp)?,
+        msgid::COORDINATE_PING => handle_message::<CoordinatePing>(ctx, rlp)?,
+        msgid::COORDINATE_PONG => handle_message::<CoordinatePong>(ctx, rlp)?,
         msgid::NEW_BLOCK => handle_message::<NewBlock>(ctx, rlp)?,
         msgid::NEW_BLOCK_HASHES => {
             handle_message::<NewBlockHashes>(ctx, rlp)?;

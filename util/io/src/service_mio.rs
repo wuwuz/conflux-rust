@@ -640,6 +640,7 @@ where Message: Send + Sync + 'static
         let mut config = EventLoopBuilder::new();
         config.messages_per_tick(1024);
         config.notify_capacity(20960);
+        config.timer_tick(Duration::from_micros(10));
         let mut event_loop = config.build().expect("Error creating event loop");
         let channel = event_loop.channel();
         let handlers = Arc::new(RwLock::new(Slab::with_capacity(MAX_HANDLERS)));
