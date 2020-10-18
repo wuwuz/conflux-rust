@@ -10,18 +10,21 @@ use cfx_types::H256;
 use rlp_derive::{RlpDecodable, RlpEncodable};
 use std::collections::HashSet;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use vivaldi::{
+    vector::Dimension2, vector::Dimension3,
+    Coordinate,
+};
 
-#[derive(Debug, PartialEq, RlpDecodable, RlpEncodable)]
+#[derive(Debug, RlpDecodable, RlpEncodable)]
 pub struct CoordinatePing {
-    pub x: u32,
-    pub y: u32,
+    pub coord: vivaldi::Coordinate<Dimension2>,
     pub send_time_milli: u64, // millisecond since UNIX_EPOCH
 }
 
-#[derive(Debug, PartialEq, RlpDecodable, RlpEncodable)]
+#[derive(Debug, RlpDecodable, RlpEncodable)]
 pub struct CoordinatePong {
-    pub x: u32,
-    pub y: u32,
+    pub recv_coord: vivaldi::Coordinate<Dimension2>, 
+    pub send_coord: vivaldi::Coordinate<Dimension2>,
     pub send_time_milli: u64, // millisecond since UNIX_EPOCH
 }
 
@@ -29,8 +32,8 @@ impl Handleable for CoordinatePing {
     fn handle(self, ctx: &Context) -> Result<(), Error> {
         debug!("on_coodinate_ping, msg=:{:?}", self);
         let response = CoordinatePong {
-            x: self.x, 
-            y: self.y,
+            recv_coord: self.coord.clone(),
+            send_coord: ctx.manager.get_coordinate(),
             send_time_milli: self.send_time_milli,
         };
         ctx.send_response(&response)
@@ -39,13 +42,16 @@ impl Handleable for CoordinatePing {
 
 impl Handleable for CoordinatePong {
     fn handle(self, ctx: &Context) -> Result<(), Error> {
-        debug!("on_coodinate_pong, msg=:{:?}", self);
+        debug!("on_coodinate_pong, msg=:{:?}, from {}", self, ctx.node_id());
         let send_time = UNIX_EPOCH.checked_add(Duration::from_millis(self.send_time_milli));
         if let Some(send_time) = send_time {
 
             let now = SystemTime::now();
             let elapsed_time = now.duration_since(send_time).expect("clock may have gone backwards");
             debug!("RTT is {:?}", elapsed_time);
+
+            ctx.manager.update_coordinate(&self.send_coord, elapsed_time);
+            debug!("My new coordinate is {:?}", ctx.manager.get_coordinate());
         }
 
         Ok(())

@@ -48,7 +48,10 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use vivaldi::{
-    vector::Dimension3, *,
+    vector::Dimension2, 
+    vector::Dimension3,
+    Model,
+    Coordinate,
 };
 
 lazy_static! {
@@ -380,7 +383,9 @@ pub struct SynchronizationProtocolHandler {
 
     // vivaldi algorithm
     //pub coordinate_db: RwLock<HashMap<H256, vivaldi::Coordinate<Dimension3>>>,
-    //pub vivaldi_model: RwLock<vivaldi::Model<Dimension3>>,
+    #[ignore_malloc_size_of = "not necessary for vivaldi model"]
+    //pub vivaldi_model: RwLock<Arc<vivaldi::Model<Dimension2>>>,
+    pub vivaldi_model: RwLock<vivaldi::Model<Dimension2>>,
 }
 
 #[derive(Clone, DeriveMallocSizeOf)]
@@ -445,6 +450,9 @@ impl SynchronizationProtocolHandler {
 
         let state_sync = Arc::new(SnapshotChunkSync::new(state_sync_config));
 
+        //let vivaldi_model = RwLock::new(Arc::new(vivaldi::Model::<Dimension2>::new()));
+        let vivaldi_model = RwLock::new(vivaldi::Model::<Dimension2>::new());
+
         Self {
             protocol_version: SYNCHRONIZATION_PROTOCOL_VERSION,
             protocol_config,
@@ -467,6 +475,7 @@ impl SynchronizationProtocolHandler {
             state_sync,
             synced_epoch_id: Default::default(),
             light_provider,
+            vivaldi_model,
         }
     }
 
@@ -536,6 +545,16 @@ impl SynchronizationProtocolHandler {
     ) {
         self.request_manager
             .append_received_transactions(transactions);
+    }
+
+    pub fn get_coordinate(&self) -> vivaldi::Coordinate<Dimension2> {
+        let model = self.vivaldi_model.read();
+        model.get_coordinate().clone()
+    }
+
+    pub fn update_coordinate(&self, coord: &Coordinate<Dimension2>, rtt: Duration) {
+        let mut model = self.vivaldi_model.write();
+        model.observe(&coord, rtt);
     }
 
     fn dispatch_message(
@@ -1211,10 +1230,10 @@ impl SynchronizationProtocolHandler {
         let send_time = SystemTime::now();
         let send_time_milli = send_time.duration_since(UNIX_EPOCH).expect("cannot convert systime").as_millis();
         let send_time_milli:u64 = send_time_milli as u64;
+        let model = self.vivaldi_model.read();
 
         CoordinatePing {
-            x: 1, 
-            y: 2,
+            coord: model.get_coordinate().clone(),
             send_time_milli,
         }
     }
