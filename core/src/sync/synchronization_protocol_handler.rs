@@ -382,7 +382,8 @@ pub struct SynchronizationProtocolHandler {
     light_provider: Arc<LightProvider>,
 
     // vivaldi algorithm
-    //pub coordinate_db: RwLock<HashMap<H256, vivaldi::Coordinate<Dimension3>>>,
+    #[ignore_malloc_size_of = "not necessary for vivaldi model"]
+    pub coordinate_db: RwLock<HashMap<NodeId, vivaldi::Coordinate<Dimension2>>>,
     #[ignore_malloc_size_of = "not necessary for vivaldi model"]
     //pub vivaldi_model: RwLock<Arc<vivaldi::Model<Dimension2>>>,
     pub vivaldi_model: RwLock<vivaldi::Model<Dimension2>>,
@@ -453,6 +454,9 @@ impl SynchronizationProtocolHandler {
         //let vivaldi_model = RwLock::new(Arc::new(vivaldi::Model::<Dimension2>::new()));
         let vivaldi_model = RwLock::new(vivaldi::Model::<Dimension2>::new());
 
+        //pub coordinate_db: RwLock<HashMap<NodeId, vivaldi::Coordinate<Dimension2>>>,
+        let coordinate_db = RwLock::new(HashMap::new());
+
         Self {
             protocol_version: SYNCHRONIZATION_PROTOCOL_VERSION,
             protocol_config,
@@ -476,6 +480,7 @@ impl SynchronizationProtocolHandler {
             synced_epoch_id: Default::default(),
             light_provider,
             vivaldi_model,
+            coordinate_db,
         }
     }
 
@@ -555,6 +560,26 @@ impl SynchronizationProtocolHandler {
     pub fn update_coordinate(&self, coord: &Coordinate<Dimension2>, rtt: Duration) {
         let mut model = self.vivaldi_model.write();
         model.observe(&coord, rtt);
+    }
+
+    pub fn insert_coordinate(&self, node_id: NodeId, coord: &Coordinate<Dimension2>) {
+        println!("Inserting Coord!!! {:?} {:?}", &node_id, &coord);
+        let mut map = self.coordinate_db.write();
+        if map.contains_key(&node_id) == false {
+            map.insert(node_id, coord.clone());
+            println!("Inserting Coord Success!!!");
+        } else {
+            if let Some(x) = map.get_mut(&node_id) {
+                *x = coord.clone();
+            }
+        }
+    }
+
+    pub fn print_all_coordinate(&self) {
+        let map = self.coordinate_db.read();
+        for (node_id, coord) in map.iter() {
+            println!("ID: {:?} Coordinate: {:?}\n", node_id, coord);
+        }
     }
 
     fn dispatch_message(

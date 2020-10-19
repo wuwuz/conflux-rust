@@ -31,6 +31,7 @@ pub struct CoordinatePong {
 impl Handleable for CoordinatePing {
     fn handle(self, ctx: &Context) -> Result<(), Error> {
         debug!("on_coodinate_ping, msg=:{:?}", self);
+        //ctx.manager.insert_coordinate(ctx.node_id(), &self.coord);
         let response = CoordinatePong {
             recv_coord: self.coord.clone(),
             send_coord: ctx.manager.get_coordinate(),
@@ -43,6 +44,8 @@ impl Handleable for CoordinatePing {
 impl Handleable for CoordinatePong {
     fn handle(self, ctx: &Context) -> Result<(), Error> {
         debug!("on_coodinate_pong, msg=:{:?}, from {}", self, ctx.node_id());
+        ctx.manager.insert_coordinate(ctx.node_id(), &self.send_coord);
+        ctx.manager.print_all_coordinate();
         let send_time = UNIX_EPOCH.checked_add(Duration::from_millis(self.send_time_milli));
         if let Some(send_time) = send_time {
 
