@@ -372,6 +372,7 @@ impl Discovery {
 
         trace!("Sample {} Neighbours for {:?}", neighbors.len(), &from);
 
+        // chunk_size ?????
         let chunk_size = (MAX_DATAGRAM_SIZE - (1 + 109)) / 90;
         let chunks = NeighborsChunkMessage::chunks(neighbors, chunk_size);
 
@@ -559,6 +560,8 @@ impl Discovery {
         }
     }
 
+    // sample some nodes from node_db
+    // send query to those nodes
     fn discover_without_tag(&mut self, uio: &UdpIoContext) -> usize {
         let sampled: Vec<NodeEntry> = uio
             .node_db
@@ -571,6 +574,7 @@ impl Discovery {
         self.discover_with_nodes(uio, sampled, None, None)
     }
 
+    // send 'find_nodes' queries to other nodes
     fn discover_with_nodes(
         &mut self, uio: &UdpIoContext, nodes: Vec<NodeEntry>,
         tag_key: Option<String>, tag_value: Option<String>,
@@ -647,10 +651,8 @@ fn assemble_packet(
     packet_id: u8, bytes: &[u8], secret: &Secret,
 ) -> Result<Bytes, Error> {
     let mut packet = Bytes::with_capacity(bytes.len() + 32 + 65 + 1 + 1);
-    packet.push(UDP_PROTOCOL_DISCOVERY);
-    packet.resize(1 + 32 + 65, 0); // Filled in below
-    packet.push(packet_id);
-    packet.extend_from_slice(bytes);
+    packet.push(UDP_PROTOCOL_DISCOVERY); packet.resize(1 + 32 + 65, 0); // Filled in below packet.push(packet_id);
+       packet.extend_from_slice(bytes);
 
     let hash = keccak(&packet[(1 + 32 + 65)..]);
     let signature = match sign(secret, &hash) {

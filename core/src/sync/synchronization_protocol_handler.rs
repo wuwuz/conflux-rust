@@ -578,7 +578,8 @@ impl SynchronizationProtocolHandler {
     pub fn print_all_coordinate(&self) {
         let map = self.coordinate_db.read();
         for (node_id, coord) in map.iter() {
-            println!("ID: {:?} Coordinate: {:?}\n", node_id, coord);
+            let model = self.vivaldi_model.read();
+            println!("ID: {:?} Coordinate: {:?} Est: {} ms\n", node_id, coord, vivaldi::estimate_rtt::<Dimension2>(model.get_coordinate(), &coord).as_millis());
         }
     }
 

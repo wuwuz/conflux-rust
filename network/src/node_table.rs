@@ -25,6 +25,9 @@ use std::{
     time::{self, Duration, SystemTime},
 };
 use strum::IntoEnumIterator;
+use vivaldi::{
+    Coordinate, vector::Dimension2, 
+};
 
 /// Node public key
 pub type NodeId = H512;
@@ -271,6 +274,9 @@ pub struct Node {
     //     - good network nodes first
     // 2. Refuse incoming connection from node with special tags.
     pub tags: HashMap<String, String>,
+
+    //TODO : add coordinate
+    //pub coordinate: Option<vivaldi::Coordinate<Dimension2>>,
 }
 
 impl Node {
@@ -282,6 +288,7 @@ impl Node {
             last_connected: None,
             stream_token: None,
             tags: Default::default(),
+            //coordinate: None,
         }
     }
 }
@@ -331,6 +338,7 @@ impl FromStr for Node {
             last_connected: None,
             stream_token: None,
             tags: Default::default(),
+            //coordinate: None,
         })
     }
 }

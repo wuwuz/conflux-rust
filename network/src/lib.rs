@@ -39,6 +39,7 @@ pub type PeerId = usize;
 
 mod connection;
 mod discovery;
+mod coordinate;
 mod error;
 mod handshake;
 mod ip;

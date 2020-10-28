@@ -5,6 +5,7 @@
 use super::DisconnectReason;
 use crate::{
     discovery::{Discovery, DISCOVER_NODES_COUNT},
+    coordinate::CoordinateManager,
     handshake::BYPASS_CRYPTOGRAPHY,
     io::*,
     ip_utils::{map_external_address, select_public_address},
@@ -17,6 +18,9 @@ use crate::{
     NetworkContext as NetworkContextTrait, NetworkIoMessage,
     NetworkProtocolHandler, PeerInfo, ProtocolId, ProtocolInfo,
     UpdateNodeOperation, NODE_TAG_ARCHIVE, NODE_TAG_NODE_TYPE,
+};
+use vivaldi::{
+    Model, Coordinate, vector::Dimension2,
 };
 use cfx_bytes::Bytes;
 use keccak_hash::keccak;
@@ -59,6 +63,7 @@ const CHECK_SESSIONS: TimerToken = SYS_TIMER + 9;
 const HANDLER_TIMER: TimerToken = LAST_SESSION + 256;
 const STOP_NET_POLL: TimerToken = HANDLER_TIMER + 1;
 const COORDINATE_UPDATE: TimerToken = SYS_TIMER + 10;
+const COORDINATE_REFRESH: TimerToken = SYS_TIMER + 11;
 
 pub const DEFAULT_HOUSEKEEPING_TIMEOUT: Duration = Duration::from_secs(2);
 // for DISCOVERY_REFRESH TimerToken
@@ -78,6 +83,11 @@ pub const DEFAULT_NODE_TABLE_TIMEOUT: Duration = Duration::from_secs(300);
 pub const DEFAULT_CONNECTION_LIFETIME_FOR_PROMOTION: Duration =
     Duration::from_secs(3 * 24 * 3600);
 const DEFAULT_CHECK_SESSIONS_TIMEOUT: Duration = Duration::from_secs(10);
+// for coordinate update
+pub const DEFAULT_COORDINATE_UPDATE_TIMEOUT: Duration = 
+    Duration::from_secs(1);
+pub const DEFAULT_COORDINATE_REFRESH_TIMEOUT: Duration = 
+    Duration::from_secs(3600);
 
 #[derive(
     Clone,
@@ -98,6 +108,7 @@ impl MallocSizeOf for ProtocolVersion {
 
 pub const MAX_DATAGRAM_SIZE: usize = 1280;
 pub const UDP_PROTOCOL_DISCOVERY: u8 = 1;
+pub const UDP_PROTOCOL_COORDINATE: u8 = 2;
 
 pub struct Datagram {
     pub payload: Bytes,
@@ -434,6 +445,10 @@ pub struct NetworkServiceInner {
     tcp_listener: Mutex<TcpListener>,
     udp_channel: RwLock<UdpChannel>,
     discovery: Mutex<Option<Discovery>>,
+
+    // TODO: add coordinate
+    vivaldi_model: Arc<RwLock<vivaldi::Model<Dimension2>>>,
+    coordinate_manager: Mutex<CoordinateManager>,
     handlers:
         RwLock<HashMap<ProtocolId, Arc<dyn NetworkProtocolHandler + Sync>>>,
     timers: RwLock<HashMap<TimerToken, ProtocolTimer>>,
@@ -592,6 +607,11 @@ impl NetworkServiceInner {
             }
         };
 
+        let model = Arc::new(RwLock::new(vivaldi::Model::<Dimension2>::new()));
+        let coordinate_manager = CoordinateManager::new(
+            &keys, public_endpoint.clone(), config.ip_filter.clone(), model.clone(),
+        );
+
         let nodes_path = config.config_path.clone();
 
         let mut inner = NetworkServiceInner {
@@ -607,6 +627,8 @@ impl NetworkServiceInner {
             config: config.clone(),
             udp_channel: RwLock::new(UdpChannel::new()),
             discovery: Mutex::new(discovery),
+            vivaldi_model: model,
+            coordinate_manager: Mutex::new(coordinate_manager),
             udp_socket: Mutex::new(udp_socket),
             tcp_listener: Mutex::new(tcp_listener),
             sessions: SessionManager::new(
@@ -722,6 +744,15 @@ impl NetworkServiceInner {
             io.register_timer(
                 DISCOVERY_ROUND,
                 self.config.discovery_round_timeout,
+            )?;
+
+            io.register_timer(
+                COORDINATE_REFRESH,
+                DEFAULT_COORDINATE_REFRESH_TIMEOUT,
+            )?;
+            io.register_timer(
+                COORDINATE_UPDATE,
+                DEFAULT_COORDINATE_UPDATE_TIMEOUT,
             )?;
         }
         io.register_timer(NODE_TABLE, self.config.node_table_timeout)?;
@@ -1453,6 +1484,15 @@ impl NetworkServiceInner {
                     Ok(())
                 }
             }
+            UDP_PROTOCOL_COORDINATE => {
+                let mut coordinate_manager = self.coordinate_manager.lock();
+                coordinate_manager.on_packet(
+                        &UdpIoContext::new(&self.udp_channel, &self.node_db),
+                        &packet[1..],
+                        from,
+                    )?;
+                Ok(())
+            }
             _ => {
                 warn!("Unknown UDP protocol. Simply drops the message!");
                 Ok(())
@@ -1589,6 +1629,25 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                         &self.node_db,
                     ))
                 }
+
+                // why register another udp stream? 
+                io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
+                    debug!("Error updating discovery registration: {:?}", e)
+                });
+            }
+            COORDINATE_REFRESH => {
+                let mut coordinate_manager = self.coordinate_manager.lock();
+                coordinate_manager.refresh();
+                io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
+                    debug!("Error updating discovery registration: {:?}", e)
+                });
+            }
+            COORDINATE_UPDATE => {
+                let mut coordinate_manager = self.coordinate_manager.lock();
+                coordinate_manager.round(&UdpIoContext::new(
+                    &self.udp_channel,
+                    &self.node_db,
+                ));
                 io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
                     debug!("Error updating discovery registration: {:?}", e)
                 });

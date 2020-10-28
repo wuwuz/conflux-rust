@@ -33,7 +33,7 @@ production_conf = default_conflux_conf
 
 small_local_test_conf = dict(
     chain_id = DEFAULT_PY_TEST_CHAIN_ID,
-    enable_discovery = "false",
+    enable_discovery = "true",
     log_file = "'./conflux.log'",
     log_level = '"trace"',
     metrics_output_file = "'./metrics.log'",

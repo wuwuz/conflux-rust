@@ -80,7 +80,8 @@ where
     /// // And then updates the model with the remote coordinate and rtt
     /// model.observe(&coordinate_from_remote, rtt);
     /// ```
-    pub fn observe(&mut self, coord: &Coordinate<V>, rtt: Duration) {
+    /// return the force applied to the coordinate
+    pub fn observe(&mut self, coord: &Coordinate<V>, rtt: Duration) -> V {
         // Sample weight balances local and remote error (1)
         //
         // 		w = ei/(ei + ej)
@@ -140,10 +141,13 @@ where
         // 		xi = xi + δ × ( rtt − ||xi − xj|| ) × u(xi − xj)
         //
         self.coordinate = Coordinate::new(
-            self.coordinate.vector().clone() + unit_vec.0 * weighted_force,
+            self.coordinate.vector().clone() + unit_vec.0.clone() * weighted_force,
             error,
             new_height,
         );
+
+        // return the force applied to the model
+        unit_vec.0.clone() * weighted_force
 
         // TODO: add gravity
     }
