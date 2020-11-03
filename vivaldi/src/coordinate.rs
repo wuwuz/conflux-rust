@@ -52,7 +52,8 @@ where
         self.height
     }
 
-    pub(crate) fn new(vector: V, error: f64, height: f64) -> Self {
+    /// Create a new coordinate structure
+    pub fn new(vector: V, error: f64, height: f64) -> Self {
         Coordinate {
             vector,
             error,

@@ -21,6 +21,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use throttling::time_window_bucket::TimeWindowBucket;
+use vivaldi::{
+    Coordinate, vector::Dimension2,
+};
 
 const DISCOVER_PROTOCOL_VERSION: u32 = 1;
 
@@ -277,7 +280,8 @@ impl Discovery {
         let timestamp: u64 = rlp.val_at(3)?;
         self.check_timestamp(timestamp)?;
 
-        let mut response = RlpStream::new_list(3);
+        // Here: Add the coordinate info
+        let mut response = RlpStream::new_list(4);
         let pong_to = NodeEndpoint {
             address: from.clone(),
             udp_port: ping_from.udp_port,
@@ -293,6 +297,11 @@ impl Discovery {
 
         response.append(&echo_hash);
         response.append(&expire_timestamp());
+        {
+            let model = uio.vivaldi_model.read();
+            let coord = model.get_coordinate().clone();
+            response.append(&coord);
+        }
         self.send_packet(uio, PACKET_PONG, from, &response.drain())?;
 
         let entry = NodeEntry {
@@ -321,6 +330,7 @@ impl Discovery {
         let _pong_to = NodeEndpoint::from_rlp(&rlp.at(0)?)?;
         let echo_hash: H256 = rlp.val_at(1)?;
         let timestamp: u64 = rlp.val_at(2)?;
+        let coord: vivaldi::Coordinate<Dimension2> = rlp.val_at(3)?;
         self.check_timestamp(timestamp)?;
 
         let expected_node = match self.in_flight_pings.entry(*node_id) {
@@ -344,7 +354,9 @@ impl Discovery {
         };
 
         if let Some(node) = expected_node {
-            uio.node_db.write().insert_with_conditional_promotion(node);
+            let mut node_db = uio.node_db.write();
+            node_db.insert_with_conditional_promotion(node);
+            node_db.update_node_coordinate(node_id.clone(), &coord);
             Ok(())
         } else {
             debug!("Got unexpected Pong from {:?} ; request not found", &from);

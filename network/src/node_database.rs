@@ -8,7 +8,10 @@ use crate::{
     IpFilter,
 };
 use io::StreamToken;
-use std::{collections::HashSet, net::IpAddr, time::Duration};
+use std::{collections::{HashSet, HashMap}, net::IpAddr, time::Duration};
+use vivaldi::{
+    Coordinate, vector::Dimension2, vector::Vector,
+};
 
 const TRUSTED_NODES_FILE: &str = "trusted_nodes.json";
 const UNTRUSTED_NODES_FILE: &str = "untrusted_nodes.json";
@@ -102,6 +105,10 @@ pub struct NodeDatabase {
     // 3. remove tag indices when demote a node
     // 4. remove tag indices when delete a trusted node
     trusted_node_tag_index: NodeTagIndex,
+
+    node_coordinate: HashMap<NodeId, vivaldi::Coordinate<Dimension2>>,
+    centers: Vec<vivaldi::vector::Dimension2>,
+    cluster_result: HashMap<NodeId, usize>,
 }
 
 impl NodeDatabase {
@@ -112,6 +119,9 @@ impl NodeDatabase {
         let ip_limit = NodeIpLimit::new(subnet_quota);
         let trusted_node_tag_index =
             NodeTagIndex::new_with_node_table(&trusted_nodes);
+        let node_coordinate = HashMap::new();
+        let centers = Vec::new();
+        let cluster_result = HashMap::new();
 
         let mut db = NodeDatabase {
             trusted_nodes,
@@ -120,6 +130,9 @@ impl NodeDatabase {
             blacklisted_lifetime: Duration::from_secs(7 * 24 * 3600),
             ip_limit,
             trusted_node_tag_index,
+            node_coordinate,
+            centers,
+            cluster_result,
         };
 
         db.init(false /* trusted */);
@@ -391,6 +404,106 @@ impl NodeDatabase {
             .collect()
     }
 
+    // if id does not exist, insert to the hashmap
+    // if id exists, update the coordinate
+    pub fn update_node_coordinate(
+        &mut self, id: NodeId, coord: &vivaldi::Coordinate<Dimension2>,
+    ) {
+        debug!("Updating ID = {:?} Coord = {:?}", id, coord);
+        let map = &mut self.node_coordinate;
+        if map.contains_key(&id) == false {
+            map.insert(id, coord.clone());
+        } else {
+            if let Some(x) = map.get_mut(&id) {
+                *x = coord.clone();
+            }
+        }
+    }
+
+    pub fn print_all_coordinate(
+        &self,
+    ) {
+        for (id, coord) in self.node_coordinate.iter() {
+            println!("NodeId = {:?} Coord = {:?}", id, coord);
+        }
+    }
+    
+    pub fn cluster_all_node(
+        &mut self,
+    ) {
+        // at most 8 clustering!
+        let (cluster_result, centers) = 
+        //(self.cluster_result, self.centers) = 
+            self.cluster(&self.node_coordinate, 8);
+        self.cluster_result = cluster_result;
+        self.centers = centers;
+    }
+
+    // K-mean algorithm
+    // K clusters
+
+    // return 
+    // 1. map from NodeId -> group number
+    // 2. the center of every group
+    pub fn cluster(
+        &self, 
+        coordinate: &HashMap<NodeId, vivaldi::Coordinate<Dimension2>>, 
+        K: usize
+    ) -> (HashMap<NodeId, usize>, Vec<vivaldi::vector::Dimension2>) {
+        let max_round = 100;
+        let mut results: HashMap<NodeId, usize> = HashMap::new();
+        let mut centers = Vec::new();
+
+        let mut cluster_num: usize = 0;
+        for (id, coord) in coordinate.iter() {
+            // at most K cluster
+            if cluster_num < K {
+                cluster_num += 1;
+                centers.push(coord.vector().clone());
+            }
+
+            results.insert(id.clone(), 0);
+        }
+
+        for _r in 0..max_round {
+
+            // find the closest center
+            for (id, coord) in coordinate.iter() {
+                let mut min_dist = 1e10;
+                let mut closest_center_index = 0;
+                for i in 0..cluster_num {
+                    let v = coord.vector().clone() - centers[i as usize].clone();
+                    let dist = v.magnitude().0;
+                    if dist < min_dist {
+                        min_dist = dist;
+                        closest_center_index = i;
+                    }
+                }
+                // update the results
+                if let Some(x) = results.get_mut(&id) {
+                    *x = closest_center_index;
+                }
+            }
+
+            // re-calculate the center
+            let mut new_centers: Vec<Dimension2> = vec![Default::default(); cluster_num];
+            let mut cluster_count = vec![0; cluster_num];
+            for (id, coord) in coordinate.iter() {
+                if let Some(index) = results.get(id) {
+                    new_centers[*index] = new_centers[*index] + coord.vector().clone();
+                    cluster_count[*index] += 1;
+                }
+            }
+            for i in 0..cluster_num {
+                centers[i as usize] = new_centers[i as usize].clone() / (cluster_count[i as usize] as f64);
+            }
+
+            //println!("{:?}", centers);
+        }
+
+        (results, centers)
+    }
+
     /// Persist trust and untrusted node tables and clear all useless nodes.
     pub fn save(&mut self) {
         self.trusted_nodes.save();
@@ -617,6 +730,9 @@ mod tests {
     use super::NodeDatabase;
     use crate::node_table::{NodeEndpoint, NodeEntry, NodeId};
     use std::{str::FromStr, time::Duration};
+    use vivaldi::{
+        Coordinate, vector::Dimension2, vector::Vector,
+    };
 
     fn new_entry(addr: &str) -> NodeEntry {
         NodeEntry {
@@ -796,5 +912,82 @@ mod tests {
 
         assert_eq!(db.evaluate_blacklisted(&n.id), false);
         assert_eq!(db.get(&n.id, false), None);
+    }
+
+    #[test]
+    fn test_cluster() {
+        let mut db = NodeDatabase::new(None, 100);
+
+        let n1 = new_entry("127.0.0.1:1");
+        let n2 = new_entry("127.0.0.1:2");
+        let n3 = new_entry("127.0.0.1:3");
+        let n4 = new_entry("127.0.0.1:4");
+        let n5 = new_entry("127.0.0.1:5");
+        let n6 = new_entry("127.0.0.1:6");
+        let n7 = new_entry("127.0.0.1:7"); 
+        let n8 = new_entry("127.0.0.1:8");
+        let n9 = new_entry("127.0.0.1:9"); 
+        let n10 = new_entry("127.0.0.1:10");
+
+        db.insert_trusted(n1.clone());
+        db.insert_trusted(n2.clone());
+        db.insert_trusted(n3.clone());
+        db.insert_trusted(n4.clone());
+        db.insert_trusted(n5.clone());
+        db.insert_trusted(n6.clone());
+        db.insert_trusted(n7.clone());
+        db.insert_trusted(n8.clone());
+        db.insert_trusted(n9.clone());
+        db.insert_trusted(n10.clone());
+
+        db.update_node_coordinate(n1.id.clone(), &Coordinate::new(Dimension2([-3.0, 3.0]), 0.0, 1.0));
+        db.update_node_coordinate(n2.id.clone(), &Coordinate::new(Dimension2([-2.0, 3.0]), 0.0, 1.0));
+        db.update_node_coordinate(n3.id.clone(), &Coordinate::new(Dimension2([2.0, 2.0]), 0.0, 1.0));
+        db.update_node_coordinate(n4.id.clone(), &Coordinate::new(Dimension2([3.0, 2.0]), 0.0, 1.0));
+        db.update_node_coordinate(n5.id.clone(), &Coordinate::new(Dimension2([3.0, 1.0]), 0.0, 1.0));
+        db.update_node_coordinate(n6.id.clone(), &Coordinate::new(Dimension2([-3.0, -2.0]), 0.0, 1.0));
+        db.update_node_coordinate(n7.id.clone(), &Coordinate::new(Dimension2([-2.0, -2.0]), 0.0, 1.0));
+        db.update_node_coordinate(n8.id.clone(), &Coordinate::new(Dimension2([-3.0, -3.0]), 0.0, 1.0));
+        db.update_node_coordinate(n9.id.clone(), &Coordinate::new(Dimension2([2.0, -3.0]), 0.0, 1.0));
+        db.update_node_coordinate(n10.id.clone(), &Coordinate::new(Dimension2([3.0, -3.0]), 0.0, 1.0));
+
+        let (result, _center) = db.cluster(&db.node_coordinate, 4);
+        let c1 = result.get(&n1.id);
+        let c2 = result.get(&n2.id);
+        let c3 = result.get(&n3.id);
+        let c4 = result.get(&n4.id);
+        let c5 = result.get(&n5.id);
+        let c6 = result.get(&n6.id);
+        let c7 = result.get(&n7.id);
+        let c8 = result.get(&n8.id);
+        let c9 = result.get(&n9.id);
+        let c10 = result.get(&n10.id);
+
+        /*
+        println!("c1 = {:?}", c1);
+        println!("c2 = {:?}", c2);
+        println!("c3 = {:?}", c3);
+        println!("c4 = {:?}", c4);
+        println!("c5 = {:?}", c5);
+        println!("c6 = {:?}", c6);
+        println!("c7 = {:?}", c7);
+        println!("c8 = {:?}", c8);
+        println!("c9 = {:?}", c9);
+        println!("c10 = {:?}", c10);
+        */
+
+        assert_eq!(c1, c2);
+        assert_eq!(c3, c4);
+        assert_eq!(c3, c5);
+        assert_eq!(c6, c7);
+        assert_eq!(c6, c8);
+        assert_eq!(c9, c10);
+
+
+        //db.update_node_coordinate(n1.id, Coordinate::new(Dimension2([-3, 3]), 0.0, 1.0));
+        
+
+        //assert_eq!(db.evaluate_blacklisted(&n.id), false);
+        //assert_eq!(db.get(&n.id, false), None);
     }
 }

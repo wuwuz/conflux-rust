@@ -140,13 +140,15 @@ impl UdpChannel {
 pub struct UdpIoContext<'a> {
     pub channel: &'a RwLock<UdpChannel>,
     pub node_db: &'a RwLock<NodeDatabase>,
+    pub vivaldi_model: &'a Arc<RwLock<vivaldi::Model<Dimension2>>>,
 }
 
 impl<'a> UdpIoContext<'a> {
     pub fn new(
         channel: &'a RwLock<UdpChannel>, node_db: &'a RwLock<NodeDatabase>,
+        vivaldi_model: &'a Arc<RwLock<vivaldi::Model<Dimension2>>>
     ) -> UdpIoContext<'a> {
-        UdpIoContext { channel, node_db }
+        UdpIoContext { channel, node_db, vivaldi_model }
     }
 
     pub fn send(&self, payload: Bytes, address: SocketAddr) {
@@ -447,7 +449,7 @@ pub struct NetworkServiceInner {
     discovery: Mutex<Option<Discovery>>,
 
     // TODO: add coordinate
-    vivaldi_model: Arc<RwLock<vivaldi::Model<Dimension2>>>,
+    pub vivaldi_model: Arc<RwLock<vivaldi::Model<Dimension2>>>,
     coordinate_manager: Mutex<CoordinateManager>,
     handlers:
         RwLock<HashMap<ProtocolId, Arc<dyn NetworkProtocolHandler + Sync>>>,
@@ -730,7 +732,7 @@ impl NetworkServiceInner {
                 .read()
                 .sample_trusted_nodes(DISCOVER_NODES_COUNT, &allow_ips);
             discovery.try_ping_nodes(
-                &UdpIoContext::new(&self.udp_channel, &self.node_db),
+                &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model),
                 nodes,
             );
             io.register_timer(
@@ -1474,7 +1476,7 @@ impl NetworkServiceInner {
             UDP_PROTOCOL_DISCOVERY => {
                 if let Some(discovery) = self.discovery.lock().as_mut() {
                     discovery.on_packet(
-                        &UdpIoContext::new(&self.udp_channel, &self.node_db),
+                        &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model),
                         &packet[1..],
                         from,
                     )?;
@@ -1487,7 +1489,7 @@ impl NetworkServiceInner {
             UDP_PROTOCOL_COORDINATE => {
                 let mut coordinate_manager = self.coordinate_manager.lock();
                 coordinate_manager.on_packet(
-                        &UdpIoContext::new(&self.udp_channel, &self.node_db),
+                        &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model),
                         &packet[1..],
                         from,
                     )?;
@@ -1627,6 +1629,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                     d.round(&UdpIoContext::new(
                         &self.udp_channel,
                         &self.node_db,
+                        &self.vivaldi_model
                     ))
                 }
 
@@ -1647,6 +1650,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 coordinate_manager.round(&UdpIoContext::new(
                     &self.udp_channel,
                     &self.node_db,
+                    &self.vivaldi_model,
                 ));
                 io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
                     debug!("Error updating discovery registration: {:?}", e)
