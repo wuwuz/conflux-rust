@@ -25,9 +25,6 @@ use std::{
     time::{self, Duration, SystemTime},
 };
 use strum::IntoEnumIterator;
-use vivaldi::{
-    Coordinate, vector::Dimension2, 
-};
 
 /// Node public key
 pub type NodeId = H512;

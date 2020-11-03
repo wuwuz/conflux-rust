@@ -8,10 +8,12 @@ use crate::{
     IpFilter,
 };
 use io::StreamToken;
-use std::{collections::{HashSet, HashMap}, net::IpAddr, time::Duration};
+use std::{collections::{HashSet, HashMap}, net::IpAddr, time::Duration, cmp::min};
 use vivaldi::{
-    Coordinate, vector::Dimension2, vector::Vector,
+    vector::Dimension2, vector::Vector,
 };
+use rand::prelude::*;
+use rand::distributions::WeightedIndex;
 
 const TRUSTED_NODES_FILE: &str = "trusted_nodes.json";
 const UNTRUSTED_NODES_FILE: &str = "untrusted_nodes.json";
@@ -439,7 +441,7 @@ impl NodeDatabase {
         self.centers = centers;
     }
 
-    // K-mean algorithm
+    // K-mean++ algorithm
     // K clusters
 
     // return 
@@ -448,21 +450,44 @@ impl NodeDatabase {
     pub fn cluster(
         &self, 
         coordinate: &HashMap<NodeId, vivaldi::Coordinate<Dimension2>>, 
-        K: usize
+        k: usize
     ) -> (HashMap<NodeId, usize>, Vec<vivaldi::vector::Dimension2>) {
-        let max_round = 100;
+        let max_round = 10;
         let mut results: HashMap<NodeId, usize> = HashMap::new();
         let mut centers = Vec::new();
+        let mut node_array = Vec::new();
+        let mut rng = thread_rng();
 
-        let mut cluster_num: usize = 0;
+        // clone all those coordinates
         for (id, coord) in coordinate.iter() {
-            // at most K cluster
-            if cluster_num < K {
-                cluster_num += 1;
-                centers.push(coord.vector().clone());
-            }
-
+            node_array.push(coord.vector().clone());
             results.insert(id.clone(), 0);
+        }
+
+        // K means ++
+        // Firstly randomly select a center
+        // Then, calculates the distance to the center D(x) for every nodes
+        // Select the new center based on the weighted distribution [D(x_1)^2...D(x_n)^2]
+        // Repeat this procedure until select K centers.
+
+        let n = node_array.len();
+        let cluster_num = min(k, n);
+        centers.push(node_array[0]);
+        for _i in 1..cluster_num {
+            let mut weight = Vec::new();
+            for j in 0..n {
+                let mut min_dist: f64 = 1e100;
+                for c in centers.iter() {
+                    let v = node_array[j as usize].clone() - c.clone();
+                    if v.magnitude().0 < min_dist {
+                        min_dist = v.magnitude().0;
+                    }
+                }
+                weight.push(min_dist * min_dist);
+            }
+            let d = WeightedIndex::new(&weight).unwrap();
+            let new_center_index = d.sample(&mut rng);
+            centers.push(node_array[new_center_index as usize]);
         }
 
         for _r in 0..max_round {
@@ -498,7 +523,7 @@ impl NodeDatabase {
                 centers[i as usize] = new_centers[i as usize].clone() / (cluster_count[i as usize] as f64);
             }
 
-            //println!("{:?}", centers);
+            println!("{:?}", centers);
         }
 
         (results, centers)
@@ -731,7 +756,7 @@ mod tests {
     use crate::node_table::{NodeEndpoint, NodeEntry, NodeId};
     use std::{str::FromStr, time::Duration};
     use vivaldi::{
-        Coordinate, vector::Dimension2, vector::Vector,
+        Coordinate, vector::Dimension2, 
     };
 
     fn new_entry(addr: &str) -> NodeEntry {
@@ -963,7 +988,6 @@ mod tests {
         let c9 = result.get(&n9.id);
         let c10 = result.get(&n10.id);
 
-        /*
         println!("c1 = {:?}", c1);
         println!("c2 = {:?}", c2);
         println!("c3 = {:?}", c3);
@@ -974,7 +998,6 @@ mod tests {
         println!("c8 = {:?}", c8);
         println!("c9 = {:?}", c9);
         println!("c10 = {:?}", c10);
-        */
 
         assert_eq!(c1, c2);
         assert_eq!(c3, c4);

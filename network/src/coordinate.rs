@@ -4,24 +4,21 @@
 
 use crate::{
     hash::keccak,
-    node_database::NodeDatabase,
     node_table::{NodeId, *},
-    service::{UdpIoContext, MAX_DATAGRAM_SIZE, UDP_PROTOCOL_COORDINATE},
-    Error, ErrorKind, IpFilter, ThrottlingReason, NODE_TAG_ARCHIVE,
-    NODE_TAG_NODE_TYPE,
+    service::{UdpIoContext, UDP_PROTOCOL_COORDINATE},
+    Error, ErrorKind, IpFilter, ThrottlingReason,
 };
 use vivaldi::{
-    Model, Coordinate, vector::Dimension2,
+    vector::Dimension2,
 };
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{RwLock};
 
 use cfx_bytes::Bytes;
 use cfx_types::{H256, H520};
 use cfxkey::{recover, sign, KeyPair, Secret};
-use rlp::{Encodable, Rlp, RlpStream};
-use rlp_derive::{RlpDecodable, RlpEncodable};
+use rlp::{Rlp, RlpStream};
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     net::{IpAddr, SocketAddr},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     sync::Arc,
@@ -34,7 +31,7 @@ const PACKET_PING: u8 = 1;
 const PACKET_PONG: u8 = 2;
 
 const PING_TIMEOUT: Duration = Duration::from_millis(500);
-const PONG_TIMEOUT: Duration = Duration::from_millis(500);
+//const PONG_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub const COORDINATE_NEIGHBOR_COUNT: u32 = 16;
 const MAX_NODES_PING: usize = 32; // Max nodes to add/ping at once
@@ -269,7 +266,7 @@ impl CoordinateManager {
 
         let ping_from = NodeEndpoint::from_rlp(&rlp.at(1)?)?;
         let ping_to = NodeEndpoint::from_rlp(&rlp.at(2)?)?;
-        let timestamp: u64 = rlp.val_at(3)?;
+        //let timestamp: u64 = rlp.val_at(3)?;
         //self.check_timestamp(timestamp)?;
 
         // MODIFY: Add a new field here --- the node's coordinate
@@ -317,7 +314,7 @@ impl CoordinateManager {
     }
 
     fn on_pong(
-        &mut self, uio: &UdpIoContext, rlp: &Rlp, node_id: &NodeId,
+        &mut self, _uio: &UdpIoContext, rlp: &Rlp, node_id: &NodeId,
         from: &SocketAddr,
     ) -> Result<(), Error>
     {
@@ -352,7 +349,7 @@ impl CoordinateManager {
             Entry::Vacant(_) => None,
         };
 
-        if let Some(node) = expected_node {
+        if let Some(_node) = expected_node {
             // update the model based on rtt and remote coordinate
             let mut model = self.vivaldi_model.write();
             model.observe(&recv_coordinate, Duration::from_millis(rtt));

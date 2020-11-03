@@ -1,7 +1,7 @@
 use crate::coordinate::Coordinate;
 use crate::vector::Vector;
 use std::time::Duration;
-use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
+use rlp::{Decodable, Encodable};
 
 const FLOAT_ZERO: f64 = 1.0e-8;
 

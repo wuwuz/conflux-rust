@@ -21,7 +21,7 @@ impl Encodable for Dimension3 {
 }
 
 impl Decodable for Dimension3 {
-    fn decode(r: &Rlp) -> Result<Self, DecoderError> {
+    fn decode(r: &Rlp<'_>) -> Result<Self, DecoderError> {
         let x: u64 = r.val_at(0)?;
         let y: u64 = r.val_at(1)?;
         let z: u64 = r.val_at(2)?;

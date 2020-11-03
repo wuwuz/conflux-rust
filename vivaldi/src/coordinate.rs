@@ -79,7 +79,7 @@ impl<V> Decodable for Coordinate<V>
 where
     V: Vector+ Encodable + Decodable,
 {
-    fn decode(r: &Rlp) -> Result<Self, DecoderError> {
+    fn decode(r: &Rlp<'_>) -> Result<Self, DecoderError> {
         let vector: V = r.val_at(0)?;
         let error: u64 = r.val_at(1)?;
         let height: u64 = r.val_at(2)?;

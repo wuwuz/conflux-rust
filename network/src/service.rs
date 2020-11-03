@@ -20,7 +20,7 @@ use crate::{
     UpdateNodeOperation, NODE_TAG_ARCHIVE, NODE_TAG_NODE_TYPE,
 };
 use vivaldi::{
-    Model, Coordinate, vector::Dimension2,
+    vector::Dimension2,
 };
 use cfx_bytes::Bytes;
 use keccak_hash::keccak;

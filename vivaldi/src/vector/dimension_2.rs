@@ -20,7 +20,7 @@ impl Encodable for Dimension2 {
 }
 
 impl Decodable for Dimension2 {
-    fn decode(r: &Rlp) -> Result<Self, DecoderError> {
+    fn decode(r: &Rlp<'_>) -> Result<Self, DecoderError> {
         let x: u64 = r.val_at(0)?;
         let y: u64 = r.val_at(1)?;
         let dim2: Dimension2 = Dimension2([f64::from_bits(x), f64::from_bits(y)]);

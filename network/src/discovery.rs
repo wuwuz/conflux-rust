@@ -22,7 +22,7 @@ use std::{
 };
 use throttling::time_window_bucket::TimeWindowBucket;
 use vivaldi::{
-    Coordinate, vector::Dimension2,
+    vector::Dimension2,
 };
 
 const DISCOVER_PROTOCOL_VERSION: u32 = 1;
@@ -660,7 +660,7 @@ fn expire_timestamp() -> u64 {
 }
 
 fn assemble_packet(
-    packet_id: u8, bytes: &[u8], secret: &Secret,
+    _packet_id: u8, bytes: &[u8], secret: &Secret,
 ) -> Result<Bytes, Error> {
     let mut packet = Bytes::with_capacity(bytes.len() + 32 + 65 + 1 + 1);
     packet.push(UDP_PROTOCOL_DISCOVERY); packet.resize(1 + 32 + 65, 0); // Filled in below packet.push(packet_id);
