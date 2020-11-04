@@ -14,7 +14,7 @@ use crate::{
         message::{
             handle_rlp_message, msgid, Context, DynamicCapability,
             GetBlockHeadersResponse, Heartbeat, NewBlockHashes, StatusV2,
-            StatusV3, TransactionDigests, CoordinatePing, CoordinatePong,
+            StatusV3, TransactionDigests, CoordinatePing, 
         },
         node_type::NodeType,
         request_manager::{try_get_block_hashes, Request},
@@ -49,8 +49,6 @@ use std::{
 };
 use vivaldi::{
     vector::Dimension2, 
-    vector::Dimension3,
-    Model,
     Coordinate,
 };
 

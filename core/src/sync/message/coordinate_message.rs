@@ -6,13 +6,12 @@ use crate::sync::{
     message::handleable::{Context, Handleable},
     Error,
 };
-use cfx_types::H256;
+//use cfx_types::H256;
 use rlp_derive::{RlpDecodable, RlpEncodable};
-use std::collections::HashSet;
+//use std::collections::HashSet;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use vivaldi::{
-    vector::Dimension2, vector::Dimension3,
-    Coordinate,
+    vector::Dimension2,
 };
 
 #[derive(Debug, RlpDecodable, RlpEncodable)]

@@ -18,9 +18,6 @@ use malloc_size_of_derive::MallocSizeOf as DeriveMallocSizeOf;
 use network::{NetworkService, ProtocolId};
 use primitives::{transaction::SignedTransaction, Block};
 use std::sync::Arc;
-use vivaldi::{
-    vector, Coordinate, Model,
-};
 
 #[derive(DeriveMallocSizeOf)]
 pub struct SynchronizationService {
