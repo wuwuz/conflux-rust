@@ -46,7 +46,7 @@ use malloc_size_of_derive::MallocSizeOf as DeriveMallocSizeOf;
 use network::{
     node_table::NodeId, service::ProtocolVersion,
     throttling::THROTTLING_SERVICE, NetworkContext, NetworkProtocolHandler,
-    NetworkService,
+    NetworkService, PeerLayerType,
 };
 use parking_lot::RwLock;
 use primitives::{SignedTransaction, TransactionWithSignature};
@@ -1008,6 +1008,14 @@ impl NetworkProtocolHandler for Provider {
                 TokenBucketManager::load(file, Some("light_protocol"))
                     .expect("invalid throttling configuration file");
         }
+    }
+    
+    fn on_peer_connected_with_tag(
+        &self, io: &dyn NetworkContext, peer: &NodeId,
+        peer_protocol_version: ProtocolVersion,
+        _peer_type: PeerLayerType,
+    ) {
+        self.on_peer_connected(io, peer, peer_protocol_version);
     }
 
     fn on_peer_disconnected(&self, _io: &dyn NetworkContext, peer: &NodeId) {

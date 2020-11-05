@@ -11,7 +11,7 @@ use crate::sync::{
     Error, ErrorKind, SynchronizationPeerState,
 };
 use cfx_types::H256;
-use network::{NODE_TAG_ARCHIVE, NODE_TAG_FULL, NODE_TAG_NODE_TYPE};
+use network::{NODE_TAG_ARCHIVE, NODE_TAG_FULL, NODE_TAG_NODE_TYPE, PeerLayerType};
 use primitives::ChainIdParams;
 use rlp_derive::{RlpDecodable, RlpEncodable};
 use std::{collections::HashSet, time::Instant};
@@ -99,6 +99,7 @@ impl Handleable for StatusV2 {
                 notified_capabilities: Default::default(),
                 throttling,
                 throttled_msgs: Default::default(),
+                peer_type: PeerLayerType::Random,
             };
 
             peer_state
@@ -216,6 +217,7 @@ impl Handleable for StatusV3 {
                 notified_capabilities: Default::default(),
                 throttling,
                 throttled_msgs: Default::default(),
+                peer_type: PeerLayerType::Random,
             };
 
             peer_state

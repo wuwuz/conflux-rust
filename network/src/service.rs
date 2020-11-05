@@ -17,7 +17,7 @@ use crate::{
     Error, ErrorKind, HandlerWorkType, IpFilter, NatType, NetworkConfiguration,
     NetworkContext as NetworkContextTrait, NetworkIoMessage,
     NetworkProtocolHandler, PeerInfo, ProtocolId, ProtocolInfo,
-    UpdateNodeOperation, NODE_TAG_ARCHIVE, NODE_TAG_NODE_TYPE,
+    UpdateNodeOperation, NODE_TAG_ARCHIVE, NODE_TAG_NODE_TYPE, PeerLayerType,
 };
 use vivaldi::{
     vector::Dimension2,
@@ -869,7 +869,7 @@ impl NetworkServiceInner {
                 self.config.max_handshakes.saturating_sub(handshake_count),
             ))
         {
-            self.connect_peer(&id, io);
+            self.connect_peer(&id, io, None);
             started += 1;
         }
         debug!(
@@ -934,7 +934,10 @@ impl NetworkServiceInner {
         }
     }
 
-    fn connect_peer(&self, id: &NodeId, io: &IoContext<NetworkIoMessage>) {
+    fn connect_peer(
+        &self, id: &NodeId, io: &IoContext<NetworkIoMessage>, 
+        peer_type: Option<PeerLayerType>,
+    ) {
         if self.sessions.contains_node(id) {
             trace!("Abort connect. Node already connected");
             return;
@@ -975,7 +978,7 @@ impl NetworkServiceInner {
             }
         };
 
-        if let Err(e) = self.create_connection(socket, address, Some(id), io) {
+        if let Err(e) = self.create_connection(socket, address, Some(id), io, peer_type) {
             self.node_db.write().note_failure(
                 id, true, /* by_connection */
                 true, /* trusted_only */
@@ -1030,9 +1033,10 @@ impl NetworkServiceInner {
     fn create_connection(
         &self, socket: TcpStream, address: SocketAddr, id: Option<&NodeId>,
         io: &IoContext<NetworkIoMessage>,
+        peer_type: Option<PeerLayerType>,
     ) -> Result<(), Error>
     {
-        match self.sessions.create(socket, address, id, io, self) {
+        match self.sessions.create(socket, address, id, io, self, peer_type) {
             Ok(token) => {
                 debug!("new session created, token = {}, address = {:?}, id = {:?}", token, address, id);
                 if let Some(id) = id {
@@ -1145,6 +1149,7 @@ impl NetworkServiceInner {
 
             // Handshake is just finished, first process the outcome from the
             // handshake.
+            let peer_type = session.read().peer_type;
             if handshake_done {
                 {
                     let handlers = self.handlers.read();
@@ -1165,10 +1170,11 @@ impl NetworkServiceInner {
                             );
                             network_context
                                 .protocol_handler()
-                                .on_peer_connected(
+                                .on_peer_connected_with_tag(
                                     &network_context,
                                     session_node_id.as_ref().unwrap(),
                                     protocol.version,
+                                    peer_type,
                                 );
                         }
                     }
@@ -1235,7 +1241,7 @@ impl NetworkServiceInner {
                 }
             };
 
-            if let Err(e) = self.create_connection(socket, address, None, io) {
+            if let Err(e) = self.create_connection(socket, address, None, io, None) {
                 debug!("Can't accept connection: {:?}", e);
             }
         }

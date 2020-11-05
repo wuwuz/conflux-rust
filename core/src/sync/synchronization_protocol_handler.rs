@@ -35,7 +35,7 @@ use metrics::{register_meter_with_group, Meter, MeterTimer};
 use network::{
     node_table::NodeId, service::ProtocolVersion,
     throttling::THROTTLING_SERVICE, Error as NetworkError, HandlerWorkType,
-    NetworkContext, NetworkProtocolHandler, UpdateNodeOperation,
+    NetworkContext, NetworkProtocolHandler, UpdateNodeOperation, PeerLayerType,
 };
 use parking_lot::{Mutex, RwLock};
 use primitives::{Block, BlockHeader, EpochId, SignedTransaction};
@@ -1973,6 +1973,15 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
                 .insert(*peer, (peer_protocol_version, Instant::now()));
         }
     }
+
+    fn on_peer_connected_with_tag(
+        &self, io: &dyn NetworkContext, peer: &NodeId,
+        peer_protocol_version: ProtocolVersion,
+        peer_type: PeerLayerType,
+    ) {
+        self.on_peer_connected(io, peer, peer_protocol_version);
+    }
+
 
     fn on_peer_disconnected(&self, io: &dyn NetworkContext, peer: &NodeId) {
         debug!("Peer disconnected: peer={}", peer);

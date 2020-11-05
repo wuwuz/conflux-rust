@@ -9,7 +9,7 @@ use crate::{
     parse_msg_id_leb128_2_bytes_at_most,
     service::{NetworkServiceInner, ProtocolVersion},
     DisconnectReason, Error, ErrorKind, ProtocolId, ProtocolInfo,
-    SessionMetadata, UpdateNodeOperation, PROTOCOL_ID_SIZE,
+    SessionMetadata, UpdateNodeOperation, PROTOCOL_ID_SIZE, PeerLayerType,
 };
 use bytes::Bytes;
 use io::*;
@@ -51,6 +51,8 @@ pub struct Session {
     // statistics for read/write
     last_read: Instant,
     last_write: (Instant, WriteStatus),
+
+    pub peer_type: PeerLayerType,
 }
 
 /// Session state.
@@ -100,9 +102,14 @@ impl Session {
         io: &IoContext<Message>, socket: TcpStream, address: SocketAddr,
         id: Option<&NodeId>, peer_header_version: u8, token: StreamToken,
         host: &NetworkServiceInner,
+        peer_type: Option<PeerLayerType>,
     ) -> Result<Session, Error>
     {
         let originated = id.is_some();
+        let peer_type = match peer_type {
+            Some(t) => t, 
+            None => PeerLayerType::Random,
+        };
 
         let mut handshake = Handshake::new(token, id, socket);
         handshake.start(io, &host.metadata)?;
@@ -121,6 +128,7 @@ impl Session {
             expired: None,
             last_read: Instant::now(),
             last_write: (Instant::now(), WriteStatus::Complete),
+            peer_type: peer_type,
         })
     }
 

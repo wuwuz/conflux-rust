@@ -7,7 +7,7 @@ use crate::{
     node_table::NodeId,
     service::NetworkServiceInner,
     session::{Session, PACKET_HEADER_VERSION},
-    NetworkIoMessage,
+    NetworkIoMessage, PeerLayerType,
 };
 use io::IoContext;
 use mio::net::TcpStream;
@@ -146,6 +146,7 @@ impl SessionManager {
     pub fn create(
         &self, socket: TcpStream, address: SocketAddr, id: Option<&NodeId>,
         io: &IoContext<NetworkIoMessage>, host: &NetworkServiceInner,
+        peer_type: Option<PeerLayerType>,
     ) -> Result<usize, String>
     {
         debug!(
@@ -204,6 +205,7 @@ impl SessionManager {
             PACKET_HEADER_VERSION,
             index,
             host,
+            peer_type,
         ) {
             Err(e) => {
                 debug!(

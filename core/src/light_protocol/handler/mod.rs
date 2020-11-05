@@ -36,7 +36,7 @@ use cfx_types::H256;
 use io::TimerToken;
 use network::{
     node_table::NodeId, service::ProtocolVersion, NetworkContext,
-    NetworkProtocolHandler,
+    NetworkProtocolHandler, PeerLayerType,
 };
 use parking_lot::RwLock;
 use rlp::Rlp;
@@ -782,6 +782,15 @@ impl NetworkProtocolHandler for Handler {
             }
         }
     }
+
+    fn on_peer_connected_with_tag(
+        &self, io: &dyn NetworkContext, peer: &NodeId,
+        peer_protocol_version: ProtocolVersion,
+        _peer_type: PeerLayerType,
+    ) {
+        self.on_peer_connected(io, peer, peer_protocol_version);
+    }
+
 
     fn on_peer_disconnected(&self, _io: &dyn NetworkContext, peer: &NodeId) {
         debug!("on_peer_disconnected: peer={}", peer);

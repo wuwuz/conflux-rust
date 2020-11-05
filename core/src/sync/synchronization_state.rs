@@ -16,6 +16,7 @@ use malloc_size_of_derive::MallocSizeOf as DeriveMallocSizeOf;
 use network::{
     node_table::NodeId, service::ProtocolVersion, Error as NetworkError,
     ErrorKind as NetworkErrorKind,
+    PeerLayerType,
 };
 use parking_lot::RwLock;
 use rand::prelude::SliceRandom;
@@ -25,6 +26,7 @@ use std::{
     time::{Duration, Instant},
 };
 use throttling::token_bucket::{ThrottledManager, TokenBucketManager};
+
 
 #[derive(DeriveMallocSizeOf)]
 pub struct SynchronizationPeerState {
@@ -58,6 +60,8 @@ pub struct SynchronizationPeerState {
     // should not send requests to the remote peer. Otherwise, the remote peer
     // may disconnect the TCP connection.
     pub throttled_msgs: ThrottledManager<MsgId>,
+
+    pub peer_type: PeerLayerType,
 }
 
 impl SynchronizationPeerState {

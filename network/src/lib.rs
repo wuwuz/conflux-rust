@@ -81,10 +81,19 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use malloc_size_of_derive::MallocSizeOf as DeriveMallocSizeOf;
 
 pub const NODE_TAG_NODE_TYPE: &str = "node_type";
 pub const NODE_TAG_ARCHIVE: &str = "archive";
 pub const NODE_TAG_FULL: &str = "full";
+
+// two layers of p2p network
+#[derive(Debug, PartialEq, Eq, Clone, DeriveMallocSizeOf, Copy)]
+pub enum PeerLayerType {
+    FastRoot, // belongs to the fast layer and only used when the node initiates the broadcast
+    Fast, // belongs to the fast layer and used when the node relays messages
+    Random, // belongs to the underlying layer and used whenever the node needs to send message
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NetworkConfiguration {
@@ -243,6 +252,12 @@ pub trait NetworkProtocolHandler: Sync + Send {
     fn on_peer_connected(
         &self, io: &dyn NetworkContext, node_id: &NodeId,
         peer_protocol_version: ProtocolVersion,
+    );
+
+    fn on_peer_connected_with_tag(
+        &self, io: &dyn NetworkContext, node_id: &NodeId,
+        peer_protocol_version: ProtocolVersion,
+        peer_type: PeerLayerType,
     );
 
     fn on_peer_disconnected(&self, io: &dyn NetworkContext, node_id: &NodeId);
