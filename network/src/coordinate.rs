@@ -410,7 +410,7 @@ impl CoordinateManager {
         }
     }
 
-    fn update(&mut self, uio: &UdpIoContext) {
+    fn update(&mut self, uio: &UdpIoContext, session_node_entries: &Vec<NodeEntry>) {
         let update_round = match self.update_round {
             Some(r) => r,
             None => return,
@@ -421,6 +421,15 @@ impl CoordinateManager {
                 .node_db
                 .read()
                 .sample_trusted_nodes(COORDINATE_NEIGHBOR_COUNT, &self.ip_filter);
+
+            // Add all the entries of the connected sessions
+            //self.neighbor_set.extend(*session_node_entries);
+            //self.neighbor_set.append(*session_node_entries);
+            for entry in session_node_entries.iter() {
+                self.neighbor_set.push(entry.clone());
+            }
+
+            debug!("coordinate neighbors: {:?}", &self.neighbor_set);
         }
         if update_round == UPDATE_MAX_STEPS {
             trace!("Coordinate updating stop due to beyond max round count.");
@@ -434,12 +443,12 @@ impl CoordinateManager {
         self.update_round = Some(update_round + 1);
     }
 
-    pub fn round(&mut self, uio: &UdpIoContext) {
+    pub fn round(&mut self, uio: &UdpIoContext, session_node_entries: &Vec<NodeEntry>) {
         self.check_expired(uio, Instant::now());
         self.update_new_nodes(uio);
 
         if self.update_round.is_some() {
-            self.update(uio);
+            self.update(uio, session_node_entries);
         } else if self.in_flight_pings.is_empty() && !self.update_initiated {
             // Start update if the first pings have been sent (or timed
             // out)

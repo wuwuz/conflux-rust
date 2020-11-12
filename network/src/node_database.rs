@@ -108,9 +108,10 @@ pub struct NodeDatabase {
     // 4. remove tag indices when delete a trusted node
     trusted_node_tag_index: NodeTagIndex,
 
-    node_coordinate: HashMap<NodeId, vivaldi::Coordinate<Dimension2>>,
-    centers: Vec<vivaldi::vector::Dimension2>,
-    cluster_result: HashMap<NodeId, usize>,
+    pub node_coordinate: HashMap<NodeId, vivaldi::Coordinate<Dimension2>>,
+    pub centers: Vec<vivaldi::vector::Dimension2>,
+    pub cluster_result: HashMap<NodeId, usize>,
+    pub cluster_group: Vec<HashSet<NodeId>>,
 }
 
 impl NodeDatabase {
@@ -124,6 +125,7 @@ impl NodeDatabase {
         let node_coordinate = HashMap::new();
         let centers = Vec::new();
         let cluster_result = HashMap::new();
+        let cluster_group = Vec::new();
 
         let mut db = NodeDatabase {
             trusted_nodes,
@@ -135,6 +137,7 @@ impl NodeDatabase {
             node_coordinate,
             centers,
             cluster_result,
+            cluster_group,
         };
 
         db.init(false /* trusted */);
@@ -374,6 +377,28 @@ impl NodeDatabase {
         entries
     }
 
+    pub fn sample_trusted_node_ids_within_group(
+        &self, count: u32, group_id: usize, 
+        existed_nodes: &HashSet<NodeId>, _filter: &IpFilter,
+    ) ->  HashSet<NodeId> {
+        // TODO: with_in_group!!!!
+
+        // Here we do not consider the ip_limit!!!!
+        let mut cnt = 0;
+        let mut nodes: HashSet<NodeId> = HashSet::new();
+        for node in self.cluster_group[group_id].iter(){
+            if self.trusted_nodes.contains(node) && !existed_nodes.contains(node) {
+                nodes.insert(node.clone());
+                cnt += 1;
+                if cnt >= count {
+                    break;
+                }
+            }
+        }
+        
+        nodes
+    }
+
     pub fn sample_trusted_node_ids(
         &self, count: u32, filter: &IpFilter,
     ) -> HashSet<NodeId> {
@@ -432,13 +457,29 @@ impl NodeDatabase {
     
     pub fn cluster_all_node(
         &mut self,
+        self_id: NodeId,
+        self_coord: vivaldi::Coordinate<Dimension2>,
     ) {
+        self.update_node_coordinate(self_id, &self_coord);
+
         // at most 8 clustering!
         let (cluster_result, centers) = 
         //(self.cluster_result, self.centers) = 
             self.cluster(&self.node_coordinate, 8);
         self.cluster_result = cluster_result;
         self.centers = centers;
+
+        let n = self.centers.len();
+        self.cluster_group = vec![Default::default(); n];
+        for (id, group_id) in self.cluster_result.iter() {
+            self.cluster_group[*group_id].insert(id.clone());
+        }
+
+        let mut i = 0;
+        for group in self.cluster_group.iter() {
+            debug!("cluster group {} : {:?}", i, group);
+            i += 1;
+        }
     }
 
     // K-mean++ algorithm

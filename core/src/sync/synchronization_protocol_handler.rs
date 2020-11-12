@@ -1977,9 +1977,13 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
     fn on_peer_connected_with_tag(
         &self, io: &dyn NetworkContext, peer: &NodeId,
         peer_protocol_version: ProtocolVersion,
-        peer_type: PeerLayerType,
+        _peer_type: PeerLayerType,
     ) {
+        // 1. store the tag in some database
+        //db.push(peer, peer_type);
         self.on_peer_connected(io, peer, peer_protocol_version);
+
+        // 2. On receiving status message, retreive the tag from the db
     }
 
 

@@ -64,6 +64,7 @@ const HANDLER_TIMER: TimerToken = LAST_SESSION + 256;
 const STOP_NET_POLL: TimerToken = HANDLER_TIMER + 1;
 const COORDINATE_UPDATE: TimerToken = SYS_TIMER + 10;
 const COORDINATE_REFRESH: TimerToken = SYS_TIMER + 11;
+const COORDINATE_CLUSTER: TimerToken = SYS_TIMER + 12;
 
 pub const DEFAULT_HOUSEKEEPING_TIMEOUT: Duration = Duration::from_secs(2);
 // for DISCOVERY_REFRESH TimerToken
@@ -88,6 +89,12 @@ pub const DEFAULT_COORDINATE_UPDATE_TIMEOUT: Duration =
     Duration::from_secs(1);
 pub const DEFAULT_COORDINATE_REFRESH_TIMEOUT: Duration = 
     Duration::from_secs(3600);
+pub const DEFAULT_COORDINATE_CLUSTER_TIMEOUT: Duration = 
+    Duration::from_secs(5);
+
+pub const FAST_PEER_LOCAL_GROUP: usize = 3;
+pub const FAST_PEER_REMOTE_GROUP: usize = 2;
+pub const FAST_ROOT_PEER_PER_GROUP: usize = 1;
 
 #[derive(
     Clone,
@@ -756,6 +763,10 @@ impl NetworkServiceInner {
                 COORDINATE_UPDATE,
                 DEFAULT_COORDINATE_UPDATE_TIMEOUT,
             )?;
+            io.register_timer(
+                COORDINATE_CLUSTER,
+                DEFAULT_COORDINATE_CLUSTER_TIMEOUT,
+            )?;
         }
         io.register_timer(NODE_TABLE, self.config.node_table_timeout)?;
         io.register_timer(CHECK_SESSIONS, DEFAULT_CHECK_SESSIONS_TIMEOUT)?;
@@ -869,6 +880,121 @@ impl NetworkServiceInner {
                 self.config.max_handshakes.saturating_sub(handshake_count),
             ))
         {
+            self.connect_peer(&id, io, None);
+            started += 1;
+        }
+        debug!(
+            "Connecting peers: {} sessions, {} pending + {} started",
+            egress_count + ingress_count,
+            handshake_count,
+            started
+        );
+        if egress_count + ingress_count == 0 {
+            warn!(
+                "No peers connected at this moment, {} pending + {} started",
+                handshake_count, started
+            );
+        }
+    }
+
+    // Fast Layer for the P2P network
+    // Connect to the peers based on clustering result
+    fn connect_cluster_peers(&self, io: &IoContext<NetworkIoMessage>) {
+        if self.metadata.minimum_peer_protocol_version.read().len() == 0 {
+            // The protocol handler has not been registered, we just wait for
+            // the next time.
+            return;
+        }
+
+        let self_id = self.metadata.id().clone();
+        let self_group_id = self.node_db.read().cluster_result.get(&self_id).unwrap().clone();
+
+        debug!("self_cluster_group_id = {}", &self_group_id);
+        //let node_db = self.node_db.read();
+
+        // 1. count the current sessions
+        let cluster_num = self.node_db.read().centers.len();
+        let mut cluster_connect_cnt = vec![0; cluster_num];
+        let mut cluster_group: Vec<HashSet<NodeId>> = vec![Default::default(); cluster_num];
+        let mut cluster_root_connect_cnt = vec![0; cluster_num];
+        let mut killing_peers: Vec<NodeId> = Vec::new();
+
+        let (handshake_count, egress_count, ingress_count) =
+            self.sessions.stat();
+
+        let sessions = self.sessions.all();
+        
+        for sess in sessions.iter() {
+            let s = sess.read();
+            let id = s.id().unwrap();
+            debug!("clustering: session id = {:?}", id);
+            match s.peer_type {
+                PeerLayerType::Fast => {
+                    let group_id = self.node_db.read().cluster_result.get(id).unwrap().clone();
+                    cluster_connect_cnt[group_id] += 1;
+                    cluster_group[group_id].insert(id.clone());
+                    // FIXME: use network config
+                    if cluster_connect_cnt[group_id] > 2 {
+                        killing_peers.push(id.clone());
+                        cluster_connect_cnt[group_id] -= 1;
+                    }
+                }
+                PeerLayerType::FastRoot => {
+                    let group_id = self.node_db.read().cluster_result.get(id).unwrap().clone();
+                    cluster_root_connect_cnt[group_id] += 1;
+                    cluster_group[group_id].insert(id.clone());
+                    if cluster_root_connect_cnt[group_id] > 1 {
+                        killing_peers.push(id.clone());
+                        cluster_root_connect_cnt[group_id] -= 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        debug!("cluster connection stat: {:?}", &cluster_connect_cnt);
+        debug!("cluster root connection stat: {:?}", &cluster_root_connect_cnt);
+
+        // 2. kill extra session
+        for peer in killing_peers.iter() {
+            debug!("killing cluster peer: {:?}", peer);
+            self.kill_connection(peer, io, true, None, "Exceed cluster upper bound");
+        }
+
+        // 3. sample new peers
+        let mut new_nodes: HashSet<NodeId> = HashSet::new();
+        for i in 0..cluster_num {
+            let fast_peer_in_group = match i {
+                self_group_id => FAST_PEER_LOCAL_GROUP,
+                _ => FAST_PEER_REMOTE_GROUP,
+            };
+            let sample_count = 
+                (fast_peer_in_group - cluster_connect_cnt[i as usize]) + 
+                (FAST_ROOT_PEER_PER_GROUP - cluster_root_connect_cnt[i as usize]);
+
+            let group_samples = self.node_db.read().sample_trusted_node_ids_within_group(
+                sample_count as u32, 
+                i as usize,
+                &cluster_group[i as usize],
+                &self.config.ip_filter,
+            );
+            debug!("sample peer in cluster group {}: {:?}", i, &group_samples);
+            //new_node.chain(group_samples);
+            new_nodes.extend(&group_samples);
+        }
+
+        // 4. connect to new group
+        let max_handshakes_per_round = self.config.max_handshakes / 2;
+        let mut started: usize = 0;
+        for id in new_nodes
+            .iter()
+            .filter(|id| !self.sessions.contains_node(id) && **id != self_id)
+            .take(min(
+                max_handshakes_per_round,
+                self.config.max_handshakes.saturating_sub(handshake_count),
+            ))
+        {
+            debug!("connect to new peer {:?}", &id);
             self.connect_peer(&id, io, None);
             started += 1;
         }
@@ -1652,15 +1778,42 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 });
             }
             COORDINATE_UPDATE => {
+                // get all sessions's NodeEntry
+                let node_db = self.node_db.read();
+                let sessions = self.sessions.all();
+                let mut sess_node_entries = Vec::new();
+                for sess in sessions.iter() {
+                    let metadata = &sess.read().metadata;
+                    debug!("coordinate update: session metadata = {:?}", metadata);
+                    let id = &sess.read().metadata.id;
+                    assert!(id.is_some());
+                    debug!("coordinate update: session id = {:?}", id);
+                    let id = id.unwrap();
+                    let node = node_db.get(&id, false).unwrap();
+                    let entry = NodeEntry {
+                        id: node.id.clone(),
+                        endpoint: node.endpoint.clone(),
+                    };
+                    sess_node_entries.push(entry);
+                }
+
                 let mut coordinate_manager = self.coordinate_manager.lock();
-                coordinate_manager.round(&UdpIoContext::new(
-                    &self.udp_channel,
-                    &self.node_db,
-                    &self.vivaldi_model,
-                ));
+                coordinate_manager.round(
+                    &UdpIoContext::new(
+                        &self.udp_channel,
+                        &self.node_db,
+                        &self.vivaldi_model,
+                    ),
+                    &sess_node_entries,
+                );
                 io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
                     debug!("Error updating discovery registration: {:?}", e)
                 });
+            }
+            COORDINATE_CLUSTER => {
+                let self_coord = self.vivaldi_model.read().get_coordinate().clone();
+                self.node_db.write().cluster_all_node(self.metadata.id().clone(), self_coord);
+                self.connect_cluster_peers(io);
             }
             NODE_TABLE => {
                 trace!("Refreshing node table");

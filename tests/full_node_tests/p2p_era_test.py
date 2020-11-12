@@ -15,7 +15,7 @@ from test_framework.util import *
 
 class P2PTest(ConfluxTestFramework):
     def set_test_params(self):
-        self.num_nodes = 3 ## 8
+        self.num_nodes = 9 ## 8
 
         self.conf_parameters["generate_tx"] = "true"
         # Every node generates 1 tx every second
@@ -53,7 +53,7 @@ class P2PTest(ConfluxTestFramework):
         sync_blocks(self.nodes)
 
     def run_test(self):
-        block_number = 200
+        block_number = 20
 
         # Setup balance for each node
         client = RpcClient(self.nodes[0])
