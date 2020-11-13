@@ -2048,7 +2048,8 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
             }
             COORDINATE_TIMER => {
                 debug!("Coordinate timer!");
-                self.send_coordinate(io);
+                // FIXME: uncomment the code
+                //self.send_coordinate(io);
             }
             _ => warn!("Unknown timer {} triggered.", timer),
         }

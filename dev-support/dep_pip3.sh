@@ -3,8 +3,8 @@
 set -e
 
 function install() {
-	if [ "`pip show $1`" =  "" ]; then
-		pip install $1 --user
+	if [ "`pip3 show $1`" =  "" ]; then
+		pip3 install $1 --user
 	fi
 }
 

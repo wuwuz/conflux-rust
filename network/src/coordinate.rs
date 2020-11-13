@@ -35,7 +35,7 @@ const PING_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub const COORDINATE_NEIGHBOR_COUNT: u32 = 16;
 const MAX_NODES_PING: usize = 32; // Max nodes to add/ping at once
-const UPDATE_MAX_STEPS: u32 = 1024; // Max iterations of coordainte update.
+const UPDATE_MAX_STEPS: u32 = 5; // Max iterations of coordainte update.
 
 const DEFAULT_THROTTLING_INTERVAL: Duration = Duration::from_secs(1);
 const DEFAULT_THROTTLING_LIMIT_PING: usize = 20;

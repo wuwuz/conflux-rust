@@ -202,6 +202,23 @@ impl Discovery {
         payload: &[u8],
     ) -> Result<H256, Error>
     {
+        match packet_id {
+            PACKET_PING => {
+                debug!("Discovery Sending Packet (PING) to {:?}", address);
+            }
+            PACKET_PONG => {
+                debug!("Discovery Sending Packet (PONG) to {:?}", address);
+            }
+            PACKET_FIND_NODE => {
+                debug!("Discovery Sending Packet (FINDNODE) to {:?}", address);
+            }
+            PACKET_NEIGHBOURS => {
+                debug!("Discovery Sending Packet (NEIGH) to {:?}", address);
+            }
+            _ => {
+                debug!("Sending Unknown UDP packet: {:?} to {:?}", packet_id, address);
+            }
+        }
         let packet = assemble_packet(packet_id, payload, &self.secret)?;
         let hash = H256::from_slice(&packet[1..=32]);
         self.send_to(uio, packet, address.clone());
@@ -241,7 +258,7 @@ impl Discovery {
             PACKET_FIND_NODE => self.on_find_node(uio, &rlp, &node_id, &from),
             PACKET_NEIGHBOURS => self.on_neighbours(uio, &rlp, &node_id, &from),
             _ => {
-                debug!("Unknown UDP packet: {}", packet_id);
+                debug!("Unknown UDP packet: {} from {:?}", packet_id, &from);
                 Ok(())
             }
         }
@@ -302,6 +319,7 @@ impl Discovery {
             let coord = model.get_coordinate().clone();
             response.append(&coord);
         }
+        trace!("sending pong to {:?}", &from);
         self.send_packet(uio, PACKET_PONG, from, &response.drain())?;
 
         let entry = NodeEntry {
