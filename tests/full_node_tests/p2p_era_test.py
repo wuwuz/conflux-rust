@@ -45,15 +45,18 @@ class P2PTest(ConfluxTestFramework):
         for i in self.full_nodes:
             self.start_node(i, extra_args=["--full"], phase_to_wait=None)
 
+    # testing... remove the comment here
+    '''
     def setup_network(self):
         self.setup_nodes()
         # Make all nodes fully connected, so a crashed archive node can be connected to another
         # archive node to catch up
         connect_sample_nodes(self.nodes, self.log, sample=self.num_nodes - 1)
         sync_blocks(self.nodes)
+    '''
 
     def run_test(self):
-        block_number = 20
+        block_number = 200
 
         # Setup balance for each node
         client = RpcClient(self.nodes[0])

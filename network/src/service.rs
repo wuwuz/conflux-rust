@@ -827,6 +827,7 @@ impl NetworkServiceInner {
         if self.is_consortium {
             unimplemented!();
         } else {
+            //FIXME: testing, uncomment the next line
             self.connect_peers(io);
         }
         self.drop_peers(io);
@@ -926,8 +927,9 @@ impl NetworkServiceInner {
         
         for sess in sessions.iter() {
             let s = sess.read();
+            let peer_type = s.peer_type;
             let id = s.id().unwrap();
-            debug!("clustering: session id = {:?}", id);
+            debug!("clustering: session id = {:?}, type = {:?}", id, peer_type);
             match s.peer_type {
                 PeerLayerType::Fast => {
                     let group_id = self.node_db.read().cluster_result.get(id).unwrap().clone();
@@ -963,6 +965,8 @@ impl NetworkServiceInner {
 
         // 3. sample new peers
         let mut new_nodes: HashSet<NodeId> = HashSet::new();
+        let mut new_nodes_group: HashMap<NodeId, usize> = HashMap::new();
+
         for i in 0..cluster_num {
             let fast_peer_in_group = match i {
                 self_group_id => FAST_PEER_LOCAL_GROUP,
@@ -978,6 +982,9 @@ impl NetworkServiceInner {
                 &cluster_group[i as usize],
                 &self.config.ip_filter,
             );
+            for sample in group_samples.iter() {
+                new_nodes_group.insert(sample.clone(), i);
+            }
             debug!("sample peer in cluster group {}: {:?}", i, &group_samples);
             //new_node.chain(group_samples);
             new_nodes.extend(&group_samples);
@@ -994,8 +1001,16 @@ impl NetworkServiceInner {
                 self.config.max_handshakes.saturating_sub(handshake_count),
             ))
         {
-            debug!("connect to new peer {:?}", &id);
-            self.connect_peer(&id, io, None);
+            let group = new_nodes_group.get(id).unwrap();
+            let mut peer_type = PeerLayerType::Fast;
+            if cluster_connect_cnt[*group] == 2 {
+                peer_type = PeerLayerType::FastRoot;
+                cluster_root_connect_cnt[*group] += 1;
+            } else {
+                cluster_connect_cnt[*group] += 1;
+            }
+            debug!("connect to new cluster peer {:?}, type = {:?}", &id, peer_type);
+            self.connect_peer(&id, io, Some(peer_type));
             started += 1;
         }
         debug!(
@@ -1275,14 +1290,20 @@ impl NetworkServiceInner {
 
             // Handshake is just finished, first process the outcome from the
             // handshake.
-            let peer_type = session.read().peer_type;
+            let peer_type;
+            {
+                let sess = session.read();
+                peer_type = sess.peer_type.clone();
+            }
+            // FIXME: DEADLOCK HERE?????
+            //let peer_type = PeerLayerType::Random;
             if handshake_done {
                 {
+                    let session_metadata = session.read().metadata.clone();
                     let handlers = self.handlers.read();
                     // Clone the data to prevent deadlock, because handler may
                     // close the connection within the on_peer_connected
                     // callback.
-                    let session_metadata = session.read().metadata.clone();
                     for protocol in &session_metadata.peer_protocols {
                         if let Some(handler) =
                             handlers.get(&protocol.protocol).cloned()
@@ -1779,19 +1800,25 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
             }
             COORDINATE_UPDATE => {
                 // get all sessions's NodeEntry
-                let node_db = self.node_db.read();
+                // DEADLOCK..
+                // decoupling..
+
                 let sessions = self.sessions.all();
+                let mut sess_ids = Vec::new();
                 let mut sess_node_entries = Vec::new();
+
                 for sess in sessions.iter() {
-                    let metadata = &sess.read().metadata;
-                    debug!("coordinate update: session metadata = {:?}", metadata);
-                    let id = &sess.read().metadata.id;
+                    sess_ids.push(sess.read().metadata.id.clone());
+                }
+
+                for id in sess_ids.iter() {
                     assert!(id.is_some());
-                    debug!("coordinate update: session id = {:?}", id);
+                    //debug!("coordinate update: session id = {:?}", id);
                     let id = id.unwrap();
+                    let node_db = self.node_db.read();
                     let node = node_db.get(&id, false).unwrap();
                     let entry = NodeEntry {
-                        id: node.id.clone(),
+                        id: id.clone(),
                         endpoint: node.endpoint.clone(),
                     };
                     sess_node_entries.push(entry);

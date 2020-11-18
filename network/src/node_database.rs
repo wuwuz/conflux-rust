@@ -19,6 +19,8 @@ const TRUSTED_NODES_FILE: &str = "trusted_nodes.json";
 const UNTRUSTED_NODES_FILE: &str = "untrusted_nodes.json";
 const BLACKLISTED_NODES_FILE: &str = "blacklisted_nodes.json";
 
+pub const MAX_CLUSTER_NUM: usize = 3; // 8
+
 /// Node database maintains all P2P nodes in trusted and untrusted node tables,
 /// and supports to limit the number of nodes for the same IP address.
 ///
@@ -436,11 +438,12 @@ impl NodeDatabase {
     pub fn update_node_coordinate(
         &mut self, id: NodeId, coord: &vivaldi::Coordinate<Dimension2>,
     ) {
-        debug!("Updating ID = {:?} Coord = {:?}", id, coord);
         let map = &mut self.node_coordinate;
         if map.contains_key(&id) == false {
             map.insert(id, coord.clone());
+            debug!("Inserting ID = {:?} Coord = {:?}", id, coord);
         } else {
+            debug!("Updating ID = {:?} Coord = {:?}", id, coord);
             if let Some(x) = map.get_mut(&id) {
                 *x = coord.clone();
             }
@@ -465,7 +468,7 @@ impl NodeDatabase {
         // at most 8 clustering!
         let (cluster_result, centers) = 
         //(self.cluster_result, self.centers) = 
-            self.cluster(&self.node_coordinate, 8);
+            self.cluster(&self.node_coordinate, MAX_CLUSTER_NUM);
         self.cluster_result = cluster_result;
         self.centers = centers;
 
@@ -512,6 +515,8 @@ impl NodeDatabase {
         // Repeat this procedure until select K centers.
 
         let n = node_array.len();
+        debug!("clustering k = {:?}", k);
+        debug!("clustering: array {:?}", &node_array);
         let cluster_num = min(k, n);
         centers.push(node_array[0]);
         for _i in 1..cluster_num {
@@ -526,10 +531,15 @@ impl NodeDatabase {
                 }
                 weight.push(min_dist * min_dist);
             }
-            let d = WeightedIndex::new(&weight).unwrap();
-            let new_center_index = d.sample(&mut rng);
+            let d = WeightedIndex::new(&weight);
+            if d.is_err() {
+                break;
+            }
+            let new_center_index = d.unwrap().sample(&mut rng);
             centers.push(node_array[new_center_index as usize]);
         }
+
+        let cluster_num = centers.len();
 
         for _r in 0..max_round {
 

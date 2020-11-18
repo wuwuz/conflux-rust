@@ -357,7 +357,9 @@ impl Configuration {
         );
         network_config.max_handshakes = self.raw_conf.max_handshakes;
         network_config.max_incoming_peers = self.raw_conf.max_incoming_peers;
-        network_config.max_outgoing_peers = self.raw_conf.max_outgoing_peers;
+        //network_config.max_outgoing_peers = self.raw_conf.max_outgoing_peers;
+        //FIXME: TEST ONLY 1 RANDOM CONNECTION
+        network_config.max_outgoing_peers = 2;
         network_config.max_outgoing_peers_archive =
             self.raw_conf.max_outgoing_peers_archive.unwrap_or(0);
         Ok(network_config)

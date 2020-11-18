@@ -220,6 +220,7 @@ impl Discovery {
             }
         }
         let packet = assemble_packet(packet_id, payload, &self.secret)?;
+        //debug!("Assemble len = {}, packet =  {:?}", &packet.len(), &packet);
         let hash = H256::from_slice(&packet[1..=32]);
         self.send_to(uio, packet, address.clone());
         Ok(hash)
@@ -234,6 +235,7 @@ impl Discovery {
     pub fn on_packet(
         &mut self, uio: &UdpIoContext, packet: &[u8], from: SocketAddr,
     ) -> Result<(), Error> {
+        //debug!("Got packet from {:?}, len = {}, packet = {:?}", &from, &packet.len(), &packet);
         // validate packet
         if packet.len() < 32 + 65 + 4 + 1 {
             return Err(ErrorKind::BadProtocol.into());
@@ -678,11 +680,13 @@ fn expire_timestamp() -> u64 {
 }
 
 fn assemble_packet(
-    _packet_id: u8, bytes: &[u8], secret: &Secret,
+    packet_id: u8, bytes: &[u8], secret: &Secret,
 ) -> Result<Bytes, Error> {
     let mut packet = Bytes::with_capacity(bytes.len() + 32 + 65 + 1 + 1);
-    packet.push(UDP_PROTOCOL_DISCOVERY); packet.resize(1 + 32 + 65, 0); // Filled in below packet.push(packet_id);
-       packet.extend_from_slice(bytes);
+    packet.push(UDP_PROTOCOL_DISCOVERY); 
+    packet.resize(1 + 32 + 65, 0); // Filled in below packet.push(packet_id);
+    packet.push(packet_id);
+    packet.extend_from_slice(bytes);
 
     let hash = keccak(&packet[(1 + 32 + 65)..]);
     let signature = match sign(secret, &hash) {

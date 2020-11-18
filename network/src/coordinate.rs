@@ -323,6 +323,7 @@ impl CoordinateManager {
         let echo_hash: H256 = rlp.val_at(1)?;
         let timestamp: u64 = rlp.val_at(2)?;
         let recv_coordinate: vivaldi::Coordinate<Dimension2> = rlp.val_at(3)?;
+        //FIXME: REMOVE the manuualy added 50ms
         let rtt = produce_timestamp() - timestamp + 50;
 
         debug!("Recv Coordinate Pong from {:?} rtt {} ms", &from, &rtt);
@@ -432,8 +433,8 @@ impl CoordinateManager {
             debug!("coordinate neighbors: {:?}", &self.neighbor_set);
         }
         if update_round == UPDATE_MAX_STEPS {
-            trace!("Coordinate updating stop due to beyond max round count.");
-            self.stop();
+            trace!("Coordinate updating refresh due to beyond max round count.");
+            self.refresh();
             return;
         }
         trace!("Starting round {:?}", self.update_round);
