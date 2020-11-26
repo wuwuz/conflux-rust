@@ -1237,12 +1237,28 @@ impl SynchronizationGraph {
             .get_to_be_propagated_transactions()
     }
 
+    pub fn get_origin_to_propagate_trans(
+        &self,
+    ) -> HashMap<H256, Arc<SignedTransaction>> {
+        self.consensus
+            .get_tx_pool()
+            .get_origin_to_be_propagated_transactions()
+    }
+
     pub fn set_to_propagate_trans(
         &self, transactions: HashMap<H256, Arc<SignedTransaction>>,
     ) {
         self.consensus
             .get_tx_pool()
             .set_to_be_propagated_transactions(transactions);
+    }
+
+    pub fn set_origin_to_propagate_trans(
+        &self, transactions: HashMap<H256, Arc<SignedTransaction>>,
+    ) {
+        self.consensus
+            .get_tx_pool()
+            .set_origin_to_be_propagated_transactions(transactions);
     }
 
     pub fn try_remove_old_era_blocks_from_disk(&self) {

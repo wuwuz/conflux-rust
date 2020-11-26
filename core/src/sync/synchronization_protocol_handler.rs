@@ -46,6 +46,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    iter::FromIterator,
 };
 use vivaldi::{
     vector::Dimension2, 
@@ -496,11 +497,23 @@ impl SynchronizationProtocolHandler {
         self.graph.get_to_propagate_trans()
     }
 
+    fn get_origin_to_propagate_trans(&self) -> HashMap<H256, Arc<SignedTransaction>> {
+        self.graph.get_origin_to_propagate_trans()
+    }
+
+
     fn set_to_propagate_trans(
         &self, transactions: HashMap<H256, Arc<SignedTransaction>>,
     ) {
         self.graph.set_to_propagate_trans(transactions);
     }
+
+    fn set_origin_to_propagate_trans(
+        &self, transactions: HashMap<H256, Arc<SignedTransaction>>,
+    ) {
+        self.graph.set_origin_to_propagate_trans(transactions);
+    }
+
 
     pub fn catch_up_mode(&self) -> bool {
         self.phase_manager.get_current_phase().phase_type()
@@ -1360,13 +1373,205 @@ impl SynchronizationProtocolHandler {
             .max(self.protocol_config.min_peers_tx_propagation)
             .min(self.protocol_config.max_peers_tx_propagation);
 
-        PeerFilter::new(msgid::TRANSACTION_DIGESTS)
+        let mut peers: HashSet<NodeId> = 
+            HashSet::from_iter(
+            PeerFilter::new(msgid::TRANSACTION_DIGESTS) 
             .select_n(num_peers, &self.syn)
+            //.iter()
+            //.cloned()
+            );
+
+        let mut normal_peer_cnt = peers.len();
+        let mut cluster_peer_cnt = 0;
+        let mut randomly_selected_cluster_peer_cnt = 0;
+
+        let all_peers = self.syn.peers.read();
+        for (id, peer) in all_peers.iter() {
+            let peer_info = peer.read();
+
+            if peer_info.peer_type == PeerLayerType::Fast
+            {
+                if peers.insert(id.clone()) == true {
+                    cluster_peer_cnt += 1;
+                } else {
+                    randomly_selected_cluster_peer_cnt += 1;
+                }
+            }
+        }
+
+        let peers = peers.into_iter().collect();
+        normal_peer_cnt -= randomly_selected_cluster_peer_cnt;
+        cluster_peer_cnt += randomly_selected_cluster_peer_cnt;
+
+        debug!("TX Propagate: Selecting {} random peers, {} cluster peers", normal_peer_cnt, cluster_peer_cnt);
+
+        peers
+    }
+
+    fn fast_propagate_origin_transactions_to_cluster_peers(
+        &self, io: &dyn NetworkContext, 
+    ) {
+        debug!("TX propagate(fast): start");
+        // select the FastRoot type peers as the destinations
+        let mut lucky_peers = Vec::new(); 
+        {
+            let raw_peers = self.syn.peers.read();
+            for (id, peer) in raw_peers.iter() {
+                let peer_info = peer.read();
+
+                if peer_info.peer_type == PeerLayerType::FastRoot 
+                    && !peer_info.capabilities
+                        .contains(DynamicCapability::NormalPhase(true)) 
+                {
+                    lucky_peers.push(id.clone());
+                }
+            }
+        }
+
+        if lucky_peers.is_empty() {
+            debug!("TX Propagate(fast): No peers");
+            return;
+        }
+
+        // 29 since the remaining bytes is 29.
+        let mut nonces: Vec<(u64, u64)> = (0..lucky_peers.len())
+            .map(|_| (rand::thread_rng().gen(), rand::thread_rng().gen()))
+            .collect();
+
+        let mut short_ids_part: Vec<Vec<u8>> = vec![vec![]; lucky_peers.len()];
+        let mut tx_hashes_part: Vec<H256> = vec![];
+        let (short_ids_transactions, tx_hashes_transactions) = {
+            let mut transactions = self.get_origin_to_propagate_trans();
+            if transactions.is_empty() {
+                debug!("TX Propagate(fast): No txs");
+                return;
+            }
+
+            let mut total_tx_bytes = 0;
+            let mut short_ids_transactions: Vec<Arc<SignedTransaction>> =
+                Vec::new();
+            let mut tx_hashes_transactions: Vec<Arc<SignedTransaction>> =
+                Vec::new();
+
+            let received_pool =
+                self.request_manager.received_transactions.read();
+            for (_, tx) in transactions.iter() {
+                total_tx_bytes += tx.rlp_size();
+                if total_tx_bytes >= MAX_TXS_BYTES_TO_PROPAGATE {
+                    break;
+                }
+                if received_pool.group_overflow_from_tx_hash(&tx.hash()) {
+                    tx_hashes_transactions.push(tx.clone());
+                } else {
+                    short_ids_transactions.push(tx.clone());
+                }
+            }
+
+            if short_ids_transactions.len() + tx_hashes_transactions.len()
+                != transactions.len()
+            {
+                for tx in short_ids_transactions.iter() {
+                    transactions.remove(&tx.hash);
+                }
+                for tx in tx_hashes_transactions.iter() {
+                    transactions.remove(&tx.hash);
+                }
+                self.set_origin_to_propagate_trans(transactions);
+            }
+
+            (short_ids_transactions, tx_hashes_transactions)
+        };
+        debug!(
+            "TX Propagate(fast): Send short ids:{}, Send tx hashes:{}",
+            short_ids_transactions.len(),
+            tx_hashes_transactions.len()
+        );
+        for tx in &short_ids_transactions {
+            for i in 0..lucky_peers.len() {
+                //consist of [one random position byte, and last three
+                // bytes]
+                TransactionDigests::append_short_id(
+                    &mut short_ids_part[i],
+                    nonces[i].0,
+                    nonces[i].1,
+                    &tx.hash(),
+                );
+            }
+        }
+        let mut sent_transactions = short_ids_transactions.clone();
+        if !tx_hashes_transactions.is_empty() {
+            TX_HASHES_PROPAGATE_METER.mark(tx_hashes_transactions.len());
+            for tx in &tx_hashes_transactions {
+                TransactionDigests::append_tx_hash(
+                    &mut tx_hashes_part,
+                    tx.hash(),
+                );
+            }
+            sent_transactions.extend(tx_hashes_transactions.clone());
+        }
+
+        TX_PROPAGATE_METER.mark(sent_transactions.len());
+
+        if sent_transactions.len() == 0 {
+            return;
+        }
+
+        debug!(
+            "TX Propagate(fast): Sent {} transaction ids to {} peers.",
+            sent_transactions.len(),
+            lucky_peers.len()
+        );
+
+        let window_index = self
+            .request_manager
+            .append_sent_transactions(sent_transactions);
+
+        let mut resend_flag = false;
+        for i in 0..lucky_peers.len() {
+            let peer_id = lucky_peers[i];
+            let (key1, key2) = nonces.pop().unwrap();
+            let tx_msg = TransactionDigests::new(
+                window_index,
+                key1,
+                key2,
+                short_ids_part.pop().unwrap(),
+                tx_hashes_part.clone(),
+            );
+            match tx_msg.send(io, &peer_id) {
+                Ok(_) => {
+                    trace!(
+                        "TX Propagate(fast): {:02} <- Transactions ({} entries)",
+                        peer_id,
+                        tx_msg.len()
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "TX Propagate(fast): failed to propagate transaction ids to peer, id: {}, err: {}",
+                        peer_id, e
+                    );
+                    resend_flag = true;
+                }
+            }
+        }
+
+        if resend_flag {
+            let mut resend_transactions: HashMap<H256, Arc<SignedTransaction>> =
+                HashMap::new();
+            for tx in short_ids_transactions {
+                resend_transactions.insert(tx.hash, tx.clone());
+            }
+            for tx in tx_hashes_transactions {
+                resend_transactions.insert(tx.hash, tx.clone());
+            }
+            self.set_origin_to_propagate_trans(resend_transactions);
+        }
     }
 
     fn propagate_transactions_to_peers(
         &self, io: &dyn NetworkContext, peers: Vec<NodeId>,
     ) {
+        debug!("TX Propagate: start");
         let _timer = MeterTimer::time_func(PROPAGATE_TX_TIMER.as_ref());
         let lucky_peers = {
             peers
@@ -1390,6 +1595,7 @@ impl SynchronizationProtocolHandler {
                 .collect::<Vec<_>>()
         };
         if lucky_peers.is_empty() {
+            debug!("TX Propagate: No peers");
             return;
         }
 
@@ -1403,6 +1609,7 @@ impl SynchronizationProtocolHandler {
         let (short_ids_transactions, tx_hashes_transactions) = {
             let mut transactions = self.get_to_propagate_trans();
             if transactions.is_empty() {
+                debug!("TX Propagate: No txs");
                 return;
             }
 
@@ -1441,7 +1648,7 @@ impl SynchronizationProtocolHandler {
             (short_ids_transactions, tx_hashes_transactions)
         };
         debug!(
-            "Send short ids:{}, Send tx hashes:{}",
+            "TX Propagate: Send short ids:{}, Send tx hashes:{}",
             short_ids_transactions.len(),
             tx_hashes_transactions.len()
         );
@@ -1476,7 +1683,7 @@ impl SynchronizationProtocolHandler {
         }
 
         debug!(
-            "Sent {} transaction ids to {} peers.",
+            "TX Propagate: Sent {} transaction ids to {} peers.",
             sent_transactions.len(),
             lucky_peers.len()
         );
@@ -1499,14 +1706,14 @@ impl SynchronizationProtocolHandler {
             match tx_msg.send(io, &peer_id) {
                 Ok(_) => {
                     trace!(
-                        "{:02} <- Transactions ({} entries)",
+                        "TX Propagate: {:02} <- Transactions ({} entries)",
                         peer_id,
                         tx_msg.len()
                     );
                 }
                 Err(e) => {
                     warn!(
-                        "failed to propagate transaction ids to peer, id: {}, err: {}",
+                        "TX Propagate: failed to propagate transaction ids to peer, id: {}, err: {}",
                         peer_id, e
                     );
                     resend_flag = true;
@@ -1593,6 +1800,7 @@ impl SynchronizationProtocolHandler {
         if self.syn.peers.read().is_empty() || self.catch_up_mode() {
             return;
         }
+        self.fast_propagate_origin_transactions_to_cluster_peers(io);
 
         let peers = self.select_peers_for_transactions();
         self.propagate_transactions_to_peers(io, peers);
@@ -1977,10 +2185,23 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
     fn on_peer_connected_with_tag(
         &self, io: &dyn NetworkContext, peer: &NodeId,
         peer_protocol_version: ProtocolVersion,
-        _peer_type: PeerLayerType,
+        peer_type: PeerLayerType,
     ) {
         // 1. store the tag in some database
         //db.push(peer, peer_type);
+        {
+            let mut map = 
+                self.syn
+                    .id_to_peer_layer_type
+                    .write();
+            if map.contains_key(peer) == false {
+                map.insert(*peer, peer_type);
+            } else {
+                if let Some(x) = map.get_mut(peer) {
+                    *x = peer_type.clone();
+                }
+            }
+        }
         self.on_peer_connected(io, peer, peer_protocol_version);
 
         // 2. On receiving status message, retreive the tag from the db

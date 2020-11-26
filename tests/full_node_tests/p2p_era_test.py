@@ -56,7 +56,7 @@ class P2PTest(ConfluxTestFramework):
     '''
 
     def run_test(self):
-        block_number = 200
+        block_number = 400
 
         # Setup balance for each node
         client = RpcClient(self.nodes[0])

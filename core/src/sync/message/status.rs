@@ -85,6 +85,19 @@ impl Handleable for StatusV2 {
                     None => TokenBucketManager::default(),
                 };
 
+            let peer_layer_type;
+            {
+                let id_to_peer_layer_type = 
+                    ctx.manager.syn.id_to_peer_layer_type.read();
+                let tmp_peer_type = 
+                    id_to_peer_layer_type
+                    .get(&ctx.node_id());
+                peer_layer_type = match tmp_peer_type {
+                    Some(t) => t.clone(),
+                    None => PeerLayerType::Random,
+                };
+            }
+
             let mut peer_state = SynchronizationPeerState {
                 node_id: ctx.node_id(),
                 node_type: NodeType::Unknown,
@@ -99,7 +112,7 @@ impl Handleable for StatusV2 {
                 notified_capabilities: Default::default(),
                 throttling,
                 throttled_msgs: Default::default(),
-                peer_type: PeerLayerType::Random,
+                peer_type: peer_layer_type,
             };
 
             peer_state
@@ -111,7 +124,7 @@ impl Handleable for StatusV2 {
                 peer_protocol_version, self.genesis_hash
             );
 
-            debug!("Peer {:?} connected", ctx.node_id);
+            debug!("Peer {:?} connected type = {:?}", ctx.node_id, peer_layer_type);
             ctx.manager
                 .syn
                 .peer_connected(ctx.node_id.clone(), peer_state);
@@ -203,6 +216,19 @@ impl Handleable for StatusV3 {
                     None => TokenBucketManager::default(),
                 };
 
+            let peer_layer_type;
+            {
+                let id_to_peer_layer_type = 
+                    ctx.manager.syn.id_to_peer_layer_type.read();
+                let tmp_peer_type = 
+                    id_to_peer_layer_type
+                    .get(&ctx.node_id());
+                peer_layer_type = match tmp_peer_type {
+                    Some(t) => t.clone(),
+                    None => PeerLayerType::Random,
+                };
+            }
+
             let mut peer_state = SynchronizationPeerState {
                 node_id: ctx.node_id(),
                 node_type: self.node_type,
@@ -217,7 +243,7 @@ impl Handleable for StatusV3 {
                 notified_capabilities: Default::default(),
                 throttling,
                 throttled_msgs: Default::default(),
-                peer_type: PeerLayerType::Random,
+                peer_type: peer_layer_type,
             };
 
             peer_state
@@ -229,7 +255,7 @@ impl Handleable for StatusV3 {
                 peer_protocol_version, self.genesis_hash
             );
 
-            debug!("Peer {:?} connected", ctx.node_id);
+            debug!("Peer {:?} connected type = {:?}", ctx.node_id, peer_layer_type);
             ctx.manager
                 .syn
                 .peer_connected(ctx.node_id.clone(), peer_state);

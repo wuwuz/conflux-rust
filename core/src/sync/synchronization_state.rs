@@ -101,6 +101,7 @@ pub struct SynchronizationState {
     pub peers: RwLock<SynchronizationPeers>,
     pub handshaking_peers: RwLock<HashMap<NodeId, (ProtocolVersion, Instant)>>,
     pub last_sent_transaction_hashes: RwLock<HashSet<H256>>,
+    pub id_to_peer_layer_type: RwLock<HashMap<NodeId, PeerLayerType>>,
 }
 
 impl SynchronizationState {
@@ -114,6 +115,7 @@ impl SynchronizationState {
             peers: Default::default(),
             handshaking_peers: Default::default(),
             last_sent_transaction_hashes: Default::default(),
+            id_to_peer_layer_type: Default::default(),
         }
     }
 

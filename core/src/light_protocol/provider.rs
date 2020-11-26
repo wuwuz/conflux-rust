@@ -601,7 +601,7 @@ impl Provider {
         self.throttle(peer, &req)?;
         let tx: TransactionWithSignature = rlp::decode(&req.raw)?;
 
-        let (passed, failed) = self.tx_pool.insert_new_transactions(vec![tx]);
+        let (passed, failed) = self.tx_pool.insert_new_transactions(vec![tx], true);
 
         match (passed.len(), failed.len()) {
             (0, 0) => {

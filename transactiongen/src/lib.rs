@@ -227,7 +227,7 @@ impl TransactionGenerator {
             let mut tx_to_insert = Vec::new();
             tx_to_insert.push(signed_tx.transaction);
             let (txs, fail) =
-                txgen.txpool.insert_new_transactions(tx_to_insert);
+                txgen.txpool.insert_new_transactions(tx_to_insert, true);
             if fail.is_empty() {
                 txgen.sync.append_received_transactions(txs);
                 //tx successfully inserted into
