@@ -27,7 +27,7 @@ use vivaldi::{
 
 const DISCOVER_PROTOCOL_VERSION: u32 = 1;
 
-const DISCOVERY_MAX_STEPS: u16 = 4; // Max iterations of discovery. (discover)
+const DISCOVERY_MAX_STEPS: u16 = 8; // Max iterations of discovery. (discover)
 
 const PACKET_PING: u8 = 1;
 const PACKET_PONG: u8 = 2;
@@ -98,6 +98,8 @@ pub struct Discovery {
     // Limits the response for PING/FIND_NODE packets
     ping_throttling: TimeWindowBucket<IpAddr>,
     find_nodes_throttling: TimeWindowBucket<IpAddr>,
+
+    known_socket_addr: HashSet<SocketAddr>,
 }
 
 impl Discovery {
@@ -129,6 +131,8 @@ impl Discovery {
                 DEFAULT_THROTTLING_INTERVAL,
                 DEFAULT_THROTTLING_LIMIT_FIND_NODES,
             ),
+
+            known_socket_addr: HashSet::new(),
         }
     }
 
@@ -204,19 +208,19 @@ impl Discovery {
     {
         match packet_id {
             PACKET_PING => {
-                debug!("Discovery Sending Packet (PING) to {:?}", address);
+                debug!("Discovery: Sending Packet (PING) to {:?}", address);
             }
             PACKET_PONG => {
-                debug!("Discovery Sending Packet (PONG) to {:?}", address);
+                debug!("Discovery: Sending Packet (PONG) to {:?}", address);
             }
             PACKET_FIND_NODE => {
-                debug!("Discovery Sending Packet (FINDNODE) to {:?}", address);
+                debug!("Discovery: Sending Packet (FINDNODE) to {:?}", address);
             }
             PACKET_NEIGHBOURS => {
-                debug!("Discovery Sending Packet (NEIGH) to {:?}", address);
+                debug!("Discovery: Sending Packet (NEIGH) to {:?}", address);
             }
             _ => {
-                debug!("Sending Unknown UDP packet: {:?} to {:?}", packet_id, address);
+                debug!("Discovery: Sending Unknown UDP packet: {:?} to {:?}", packet_id, address);
             }
         }
         let packet = assemble_packet(packet_id, payload, &self.secret)?;
@@ -254,13 +258,17 @@ impl Discovery {
         let rlp = Rlp::new(&signed[1..]);
         match packet_id {
             PACKET_PING => {
+                //debug!("Discovery: Received PING from {:?}", &node_id);
                 self.on_ping(uio, &rlp, &node_id, &from, hash_signed.as_bytes())
             }
-            PACKET_PONG => self.on_pong(uio, &rlp, &node_id, &from),
+            PACKET_PONG => {
+                //debug!("Discovery: Received PONG from {:?}", &node_id);
+                self.on_pong(uio, &rlp, &node_id, &from)
+            }
             PACKET_FIND_NODE => self.on_find_node(uio, &rlp, &node_id, &from),
             PACKET_NEIGHBOURS => self.on_neighbours(uio, &rlp, &node_id, &from),
             _ => {
-                debug!("Unknown UDP packet: {} from {:?}", packet_id, &from);
+                debug!("Discovery: Unknown UDP packet: {} from {:?}", packet_id, &from);
                 Ok(())
             }
         }
@@ -285,7 +293,8 @@ impl Discovery {
         from: &SocketAddr, echo_hash: &[u8],
     ) -> Result<(), Error>
     {
-        trace!("Got Ping from {:?}", &from);
+        trace!("Discovery: Received PING from {:?}", &from);
+        //trace!("Got Ping from {:?}", &from);
 
         if !self.ping_throttling.try_acquire(from.ip()) {
             return Err(ErrorKind::Throttling(
@@ -346,7 +355,8 @@ impl Discovery {
         from: &SocketAddr,
     ) -> Result<(), Error>
     {
-        trace!("Got Pong from {:?} ; node_id={:#x}", &from, node_id);
+        trace!("Discovery: Received PONG from {:?}", &from);
+        //trace!("Got Pong from {:?} ; node_id={:#x}", &from, node_id);
         let _pong_to = NodeEndpoint::from_rlp(&rlp.at(0)?)?;
         let echo_hash: H256 = rlp.val_at(1)?;
         let timestamp: u64 = rlp.val_at(2)?;
@@ -389,9 +399,11 @@ impl Discovery {
         from: &SocketAddr,
     ) -> Result<(), Error>
     {
-        trace!("Got FindNode from {:?}", &from);
+        trace!("Discovery: Received FINDNODE from {:?}", &from);
+        //trace!("Got FindNode from {:?}", &from);
 
         if !self.find_nodes_throttling.try_acquire(from.ip()) {
+            debug!("Discovery: Throttling FINDNODE packet");
             return Err(ErrorKind::Throttling(
                 ThrottlingReason::PacketThrottled("FIND_NODES"),
             )
@@ -402,7 +414,7 @@ impl Discovery {
         self.check_timestamp(msg.expire_timestamp)?;
         let neighbors = msg.sample(&*uio.node_db.read(), &self.ip_filter)?;
 
-        trace!("Sample {} Neighbours for {:?}", neighbors.len(), &from);
+        trace!("Discovery: Sample {} Neighbours for {:?}", neighbors.len(), &from);
 
         // chunk_size ?????
         let chunk_size = (MAX_DATAGRAM_SIZE - (1 + 109)) / 90;
@@ -412,7 +424,7 @@ impl Discovery {
             self.send_packet(uio, PACKET_NEIGHBOURS, from, &chunk.rlp_bytes())?;
         }
 
-        trace!("Sent {} Neighbours chunks to {:?}", chunks.len(), &from);
+        trace!("Discovery: Sent {} Neighbours chunks to {:?}", chunks.len(), &from);
         Ok(())
     }
 
@@ -421,6 +433,7 @@ impl Discovery {
         from: &SocketAddr,
     ) -> Result<(), Error>
     {
+        trace!("Discovery: Received NEIGHBOR from {:?}", &from);
         let mut entry = match self.in_flight_find_nodes.entry(*node_id) {
             Entry::Occupied(entry) => entry,
             Entry::Vacant(_) => {
@@ -454,6 +467,14 @@ impl Discovery {
                 debug!("Address not allowed: {:?}", node);
                 continue;
             }
+
+            if !self.known_socket_addr.contains(&node.endpoint.address) {
+                debug!("Discovery: get a *new* socket addr {:?}", &node.endpoint.address);
+                self.known_socket_addr.insert(node.endpoint.address.clone());
+            } else {
+                debug!("Discovery: get a known socket addr {:?}", &node.endpoint.address);
+            }
+
             self.try_ping(uio, node);
         }
 
@@ -532,6 +553,10 @@ impl Discovery {
         }
         trace!("Starting round {:?}", self.discovery_round);
         let mut tried_count = 0;
+
+        debug!("Discovery: disc_option.general = {}", self.disc_option.general);
+        debug!("Discovery: disc_option.archive = {}", self.disc_option.archive);
+        //assert!(self.disc_option.general == false, "disc_option archive == true");
 
         if self.disc_option.general {
             tried_count += self.discover_without_tag(uio);
@@ -731,6 +756,7 @@ impl FindNodeMessage {
         let key = match self.tag_key {
             Some(ref key) => key,
             None => {
+                debug!("Discovery: try to sample nodes without tags");
                 return Ok(node_db
                     .sample_trusted_nodes(DISCOVER_NODES_COUNT, ip_filter))
             }
@@ -740,6 +766,8 @@ impl FindNodeMessage {
             Some(ref value) => value,
             None => return Err(ErrorKind::BadProtocol.into()),
         };
+
+        debug!("Discovery: try to sample nodes with key = {:?}, value = {:?}", key, value);
 
         let ids = node_db.sample_trusted_node_ids_with_tag(
             DISCOVER_NODES_COUNT,

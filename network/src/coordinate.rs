@@ -22,6 +22,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     sync::Arc,
+    iter::FromIterator,
 };
 use throttling::time_window_bucket::TimeWindowBucket;
 
@@ -60,7 +61,7 @@ pub struct CoordinateManager {
     in_flight_pings: HashMap<NodeId, PingRequest>,
     check_timestamps: bool,
     adding_nodes: Vec<NodeEntry>,
-    neighbor_set: Vec<NodeEntry>,
+    neighbor_set: HashMap<NodeId, NodeEntry>,
     ip_filter: IpFilter,
     update_initiated: bool,
     update_round: Option<u32>,
@@ -87,7 +88,7 @@ impl CoordinateManager {
             check_timestamps: true,
             update_initiated: false,
             adding_nodes: Vec::new(),
-            neighbor_set: Vec::new(),
+            neighbor_set: HashMap::new(),
             update_round: None,
             ip_filter,
             vivaldi_model: model.clone(),
@@ -117,7 +118,11 @@ impl CoordinateManager {
     pub fn try_ping_neighbors(
         &mut self, uio: &UdpIoContext, 
     ) {
-        let nodes = self.neighbor_set.clone();
+        let nodes = 
+            self.neighbor_set
+            .iter()
+            .map(|(_k, v)| v.clone())
+            .collect();
         self.try_ping_nodes(uio, nodes);
     }
 
@@ -323,8 +328,20 @@ impl CoordinateManager {
         let echo_hash: H256 = rlp.val_at(1)?;
         let timestamp: u64 = rlp.val_at(2)?;
         let recv_coordinate: vivaldi::Coordinate<Dimension2> = rlp.val_at(3)?;
-        //FIXME: REMOVE the manuualy added 50ms
-        let rtt = produce_timestamp() - timestamp + 50;
+        let mut rtt = produce_timestamp() - timestamp;
+
+
+        // simulate a 3 cluster
+        let self_group_id = self.id.to_low_u64_le() % 3;
+        let opponent_group_id = node_id.to_low_u64_le() % 3;
+
+        // if they are not in the same group, the rtt is 500ms
+        if self_group_id != opponent_group_id  {
+            rtt += 1000;
+        } else {
+            // otherwise, the rtt is 50ms
+            rtt += 50;
+        }
 
         debug!("Recv Coordinate Pong from {:?} rtt {} ms", &from, &rtt);
 
@@ -418,16 +435,23 @@ impl CoordinateManager {
         };
         if update_round == 0 {
             // the first round -- select neighbor set
-            self.neighbor_set = uio
+            self.neighbor_set = HashMap::from_iter(
+                uio
                 .node_db
                 .read()
-                .sample_trusted_nodes(COORDINATE_NEIGHBOR_COUNT, &self.ip_filter);
+                .sample_trusted_nodes(COORDINATE_NEIGHBOR_COUNT, &self.ip_filter)
+                .into_iter()
+                .map(|entry| (entry.id.clone(), entry))
+            );
+            
 
             // Add all the entries of the connected sessions
             //self.neighbor_set.extend(*session_node_entries);
             //self.neighbor_set.append(*session_node_entries);
             for entry in session_node_entries.iter() {
-                self.neighbor_set.push(entry.clone());
+                if !self.neighbor_set.contains_key(&entry.id) {
+                    self.neighbor_set.insert(entry.id.clone(), entry.clone());
+                }
             }
 
             debug!("coordinate neighbors: {:?}", &self.neighbor_set);

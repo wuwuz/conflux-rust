@@ -2,6 +2,7 @@
 import sys, os
 from eth_utils import decode_hex
 from rlp.sedes import Binary, BigEndianInt
+import time
 
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
@@ -15,7 +16,7 @@ from test_framework.util import *
 
 class P2PTest(ConfluxTestFramework):
     def set_test_params(self):
-        self.num_nodes = 9 ## 8
+        self.num_nodes = 15 ## 8
 
         self.conf_parameters["generate_tx"] = "true"
         # Every node generates 1 tx every second
@@ -31,8 +32,10 @@ class P2PTest(ConfluxTestFramework):
         self.clean_probability = 0.5
 
         self.all_nodes = list(range(0, self.num_nodes))
-        self.archive_nodes = list(range(0, self.num_nodes // 2))
-        self.full_nodes = list(range(self.num_nodes // 2, self.num_nodes))
+        #arc_nodes = self.num_nodes // 2
+        arc_nodes = 1
+        self.archive_nodes = list(range(0, arc_nodes))
+        self.full_nodes = list(range(arc_nodes, self.num_nodes))
 
     def setup_nodes(self):
         self.add_nodes(self.num_nodes)
@@ -43,6 +46,7 @@ class P2PTest(ConfluxTestFramework):
 
         # start half of the nodes as full nodes
         for i in self.full_nodes:
+            #time.sleep(5)
             self.start_node(i, extra_args=["--full"], phase_to_wait=None)
 
     # testing... remove the comment here
@@ -56,7 +60,7 @@ class P2PTest(ConfluxTestFramework):
     '''
 
     def run_test(self):
-        block_number = 400
+        block_number = 1000
 
         # Setup balance for each node
         client = RpcClient(self.nodes[0])

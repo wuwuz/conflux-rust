@@ -69,10 +69,10 @@ const COORDINATE_CLUSTER: TimerToken = SYS_TIMER + 12;
 pub const DEFAULT_HOUSEKEEPING_TIMEOUT: Duration = Duration::from_secs(2);
 // for DISCOVERY_REFRESH TimerToken
 pub const DEFAULT_DISCOVERY_REFRESH_TIMEOUT: Duration =
-    Duration::from_secs(120);
+    Duration::from_secs(10);
 // for FAST_DISCOVERY_REFRESH TimerToken
 pub const DEFAULT_FAST_DISCOVERY_REFRESH_TIMEOUT: Duration =
-    Duration::from_secs(10);
+    Duration::from_secs(5);
 // for DISCOVERY_ROUND TimerToken
 pub const DEFAULT_DISCOVERY_ROUND_TIMEOUT: Duration =
     Duration::from_millis(500);
@@ -920,6 +920,7 @@ impl NetworkServiceInner {
         let mut cluster_group: Vec<HashSet<NodeId>> = vec![Default::default(); cluster_num];
         let mut cluster_root_connect_cnt = vec![0; cluster_num];
         let mut killing_peers: Vec<NodeId> = Vec::new();
+        //let mut existing_session_ids = Vec::new();
 
         let (handshake_count, egress_count, ingress_count) =
             self.sessions.stat();
@@ -929,7 +930,14 @@ impl NetworkServiceInner {
         for sess in sessions.iter() {
             let s = sess.read();
             let peer_type = s.peer_type;
-            let id = s.id().unwrap();
+            let id = match s.id() {
+                Some(i) => i,
+                None => {
+                    continue;
+                }
+            };
+            //let id = id.unwrap();
+            //existing_session_ids.push(id.clone());
             match s.peer_type {
                 PeerLayerType::Fast => {
                     let group_id = self.node_db.read().cluster_result.get(id).unwrap().clone();
@@ -960,7 +968,14 @@ impl NetworkServiceInner {
                         cluster_root_connect_cnt[group_id] -= 1;
                     }
                 }
-                _ => {}
+                _ => {
+                    if let Some(group_id) = self.node_db.read().cluster_result.get(id) {
+                        cluster_group[*group_id].insert(id.clone());
+                    } else {
+                        debug!("connect cluster peers: No group info {:?}", id);
+                    }
+                    //let group_id = self.node_db.read().cluster_result.get(id).unwrap().clone();
+                }
             }
         }
 
@@ -995,6 +1010,9 @@ impl NetworkServiceInner {
                 &self.config.ip_filter,
             );
             for sample in group_samples.iter() {
+                if self.sessions.contains_node(sample) == true {
+                    debug!("connect cluster peers: sample an id that already connected {:?}", sample);
+                }
                 new_nodes_group.insert(sample.clone(), i);
             }
             debug!("connect cluster peers: successfully sample {} peers in group {} : {:?}", group_samples.len(), i, &group_samples);
@@ -1824,16 +1842,20 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 }
 
                 for id in sess_ids.iter() {
-                    assert!(id.is_some());
-                    //debug!("coordinate update: session id = {:?}", id);
-                    let id = id.unwrap();
-                    let node_db = self.node_db.read();
-                    let node = node_db.get(&id, false).unwrap();
-                    let entry = NodeEntry {
-                        id: id.clone(),
-                        endpoint: node.endpoint.clone(),
-                    };
-                    sess_node_entries.push(entry);
+                    //assert!(id.is_some());
+                    if id.is_some() {
+                        //debug!("coordinate update: session id = {:?}", id);
+                        let id = id.unwrap();
+                        let node_db = self.node_db.read();
+                        let node = node_db.get(&id, false).unwrap();
+                        let entry = NodeEntry {
+                            id: id.clone(),
+                            endpoint: node.endpoint.clone(),
+                        };
+                        sess_node_entries.push(entry);
+                    } else {
+                        debug!("Coordinate Update: No ID available");
+                    }
                 }
 
                 let mut coordinate_manager = self.coordinate_manager.lock();

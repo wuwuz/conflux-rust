@@ -194,7 +194,8 @@ build_config! {
         (net_key, (Option<String>), None)
         (node_table_timeout_s, (u64), 300)
         (node_table_promotion_timeout_s, (u64), 3 * 24 * 3600)
-        (session_ip_limits, (String), "1,8,4,2".into())
+        //(session_ip_limits, (String), "1,8,4,2".into())
+        (session_ip_limits, (String), "1,16,16,16".into())
         (subnet_quota, (usize), 128)
 
         // Transaction cache/transaction pool section.

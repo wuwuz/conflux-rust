@@ -1420,8 +1420,8 @@ impl SynchronizationProtocolHandler {
                 let peer_info = peer.read();
 
                 if peer_info.peer_type == PeerLayerType::FastRoot 
-                    && !peer_info.capabilities
-                        .contains(DynamicCapability::NormalPhase(true)) 
+                //    && !peer_info.capabilities
+                //        .contains(DynamicCapability::NormalPhase(true)) 
                 {
                     lucky_peers.push(id.clone());
                 }

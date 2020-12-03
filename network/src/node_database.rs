@@ -480,7 +480,12 @@ impl NodeDatabase {
 
         let mut i = 0;
         for group in self.cluster_group.iter() {
-            debug!("cluster group {} : {:?}", i, group);
+            let mut group_coord = Vec::new();
+            for id in group.iter() {
+                let coord = self.node_coordinate.get(id).unwrap();
+                group_coord.push(coord.vector().clone());
+            }
+            debug!("cluster group {} : {:?}", i, group_coord);
             i += 1;
         }
     }
@@ -508,35 +513,41 @@ impl NodeDatabase {
             results.insert(id.clone(), 0);
         }
 
-        // K means ++
-        // Firstly randomly select a center
-        // Then, calculates the distance to the center D(x) for every nodes
-        // Select the new center based on the weighted distribution [D(x_1)^2...D(x_n)^2]
-        // Repeat this procedure until select K centers.
 
-        let n = node_array.len();
-        debug!("clustering k = {:?}", k);
-        debug!("clustering: array {:?}", &node_array);
-        let cluster_num = min(k, n);
-        centers.push(node_array[0]);
-        for _i in 1..cluster_num {
-            let mut weight = Vec::new();
-            for j in 0..n {
-                let mut min_dist: f64 = 1e100;
-                for c in centers.iter() {
-                    let v = node_array[j as usize].clone() - c.clone();
-                    if v.magnitude().0 < min_dist {
-                        min_dist = v.magnitude().0;
+        if self.centers.len() == k + 1 {
+            // if history cluster results exists, set up the initial centers as the history centers.
+            centers = self.centers.clone();
+        } else {
+            // K means ++
+            // Firstly randomly select a center
+            // Then, calculates the distance to the center D(x) for every nodes
+            // Select the new center based on the weighted distribution [D(x_1)^2...D(x_n)^2]
+            // Repeat this procedure until select K centers.
+
+            let n = node_array.len();
+            debug!("clustering k = {:?}", k);
+            debug!("clustering: array {:?}", &node_array);
+            let cluster_num = min(k, n);
+            centers.push(node_array[0]);
+            for _i in 1..cluster_num {
+                let mut weight = Vec::new();
+                for j in 0..n {
+                    let mut min_dist: f64 = 1e100;
+                    for c in centers.iter() {
+                        let v = node_array[j as usize].clone() - c.clone();
+                        if v.magnitude().0 < min_dist {
+                            min_dist = v.magnitude().0;
+                        }
                     }
+                    weight.push(min_dist * min_dist);
                 }
-                weight.push(min_dist * min_dist);
+                let d = WeightedIndex::new(&weight);
+                if d.is_err() {
+                    break;
+                }
+                let new_center_index = d.unwrap().sample(&mut rng);
+                centers.push(node_array[new_center_index as usize]);
             }
-            let d = WeightedIndex::new(&weight);
-            if d.is_err() {
-                break;
-            }
-            let new_center_index = d.unwrap().sample(&mut rng);
-            centers.push(node_array[new_center_index as usize]);
         }
 
         let cluster_num = centers.len();
