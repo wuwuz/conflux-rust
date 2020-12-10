@@ -16,7 +16,7 @@ from test_framework.util import *
 
 class P2PTest(ConfluxTestFramework):
     def set_test_params(self):
-        self.num_nodes = 15 ## 8
+        self.num_nodes = 4 ## 8
 
         self.conf_parameters["generate_tx"] = "true"
         # Every node generates 1 tx every second
@@ -27,6 +27,8 @@ class P2PTest(ConfluxTestFramework):
         self.conf_parameters["era_epoch_count"] = "100"
         self.conf_parameters["dev_snapshot_epoch_count"] = "50"
         self.conf_parameters["anticone_penalty_ratio"] = "10"
+        self.conf_parameters["genesis_secrets"] = "'/home/zmx/conflux-rust/genesis_secrets.txt'"
+        print(self.conf_parameters["genesis_secrets"])
 
         self.stop_probability = 0.02
         self.clean_probability = 0.5
@@ -58,9 +60,26 @@ class P2PTest(ConfluxTestFramework):
         connect_sample_nodes(self.nodes, self.log, sample=self.num_nodes - 1)
         sync_blocks(self.nodes)
     '''
+    def init_txgen(self):
+        print("init_txgen")
+        self.options.txgen_account_count = int((os.path.getsize("/home/zmx/conflux-rust/genesis_secrets.txt")/65) //
+                                               (len(self.nodes)))
+        print(self.options.txgen_account_count)
+        #if self.enable_tx_propagation:
+            #setup usable accounts
+        start_time = time.time()
+        current_index=0
+        for i in range(len(self.nodes)):
+            client = RpcClient(self.nodes[i])
+            client.send_usable_genesis_accounts(current_index)
+            # Each node use independent set of txgen_account_count genesis accounts.
+            current_index+=self.options.txgen_account_count
+        self.log.info("Time spend (s) on setting up genesis accounts: {}".format(time.time()-start_time))
 
     def run_test(self):
-        block_number = 1000
+        self.init_txgen()
+
+        block_number = 200
 
         # Setup balance for each node
         client = RpcClient(self.nodes[0])

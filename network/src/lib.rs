@@ -146,6 +146,14 @@ pub struct NetworkConfiguration {
     /// Maximum number of P2P nodes for subnet B (ip/16).
     pub subnet_quota: usize,
     pub session_ip_limit_config: SessionIpLimitConfig,
+
+    // 2nd layer network config
+    pub coordinate_update_timeout: Duration,
+    pub cluster_round_timeout: Duration,
+    pub cluster_num: usize,
+    pub fast_peer_local_group: usize,
+    pub fast_peer_remote_group: usize,
+    pub fast_root_peer_per_group: usize,
 }
 
 impl NetworkConfiguration {
@@ -178,6 +186,12 @@ impl NetworkConfiguration {
             test_mode: false,
             subnet_quota: 32,
             session_ip_limit_config: SessionIpLimitConfig::default(),
+            coordinate_update_timeout: Duration::default(),
+            cluster_round_timeout: Duration::default(),
+            cluster_num: 1,
+            fast_peer_local_group: 0,
+            fast_peer_remote_group: 0,
+            fast_root_peer_per_group: 0,
         }
     }
 

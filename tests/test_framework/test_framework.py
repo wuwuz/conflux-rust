@@ -590,6 +590,7 @@ class OptionHelper:
                             action= 'store_false' if default_value else 'store_true',
                         )
                     else:
+                        print(arg_name, default_value)
                         parser.add_argument(
                             OptionHelper.to_argument_str(arg_name),
                             dest=arg_name,

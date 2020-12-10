@@ -19,7 +19,7 @@ const TRUSTED_NODES_FILE: &str = "trusted_nodes.json";
 const UNTRUSTED_NODES_FILE: &str = "untrusted_nodes.json";
 const BLACKLISTED_NODES_FILE: &str = "blacklisted_nodes.json";
 
-pub const MAX_CLUSTER_NUM: usize = 3; // 8
+//pub const MAX_CLUSTER_NUM: usize = 3; // 8
 
 /// Node database maintains all P2P nodes in trusted and untrusted node tables,
 /// and supports to limit the number of nodes for the same IP address.
@@ -460,15 +460,18 @@ impl NodeDatabase {
     
     pub fn cluster_all_node(
         &mut self,
+        // cluster num
+        k: usize,
         self_id: NodeId,
         self_coord: vivaldi::Coordinate<Dimension2>,
     ) {
+        debug!("cluster group num = {}", k);
         self.update_node_coordinate(self_id, &self_coord);
 
         // at most 8 clustering!
         let (cluster_result, centers) = 
         //(self.cluster_result, self.centers) = 
-            self.cluster(&self.node_coordinate, MAX_CLUSTER_NUM);
+            self.cluster(&self.node_coordinate, k);
         self.cluster_result = cluster_result;
         self.centers = centers;
 

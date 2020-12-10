@@ -545,6 +545,7 @@ pub fn initialize_txgens(
     Option<Arc<Mutex<DirectTransactionGenerator>>>,
 )
 {
+    debug!("init txgens");
     // This tx generator directly push simple transactions and erc20
     // transactions into blocks.
     let maybe_direct_txgen_with_contract = if conf.is_test_or_dev_mode() {
@@ -569,6 +570,7 @@ pub fn initialize_txgens(
             sync.clone(),
             secret_store.clone(),
         ));
+        debug!("generate tx = {}", txgen_conf.generate_tx);
         if txgen_conf.generate_tx {
             let txgen_clone = multi_genesis_txgen.clone();
             let join_handle =

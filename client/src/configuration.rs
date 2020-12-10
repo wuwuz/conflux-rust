@@ -198,6 +198,14 @@ build_config! {
         (session_ip_limits, (String), "1,16,16,16".into())
         (subnet_quota, (usize), 128)
 
+        //2nd layer config
+        (coordinate_update_timeout_ms, (u64), 1_000)
+        (cluster_round_timeout, (u64), 5_000)
+        (cluster_num, (usize), 3)
+        (fast_peer_local_group, (usize), 2)
+        (fast_peer_remote_group, (usize), 1)
+        (fast_root_peer_per_group, (usize), 1)
+
         // Transaction cache/transaction pool section.
         (tx_cache_index_maintain_timeout_ms, (u64), 300_000)
         (tx_pool_size, (usize), 200_000)
@@ -358,11 +366,25 @@ impl Configuration {
         );
         network_config.max_handshakes = self.raw_conf.max_handshakes;
         network_config.max_incoming_peers = self.raw_conf.max_incoming_peers;
-        //network_config.max_outgoing_peers = self.raw_conf.max_outgoing_peers;
+        network_config.max_outgoing_peers = self.raw_conf.max_outgoing_peers;
         //FIXME: TEST ONLY 1 RANDOM CONNECTION
-        network_config.max_outgoing_peers = 2;
+        //network_config.max_outgoing_peers = 2;
         network_config.max_outgoing_peers_archive =
             self.raw_conf.max_outgoing_peers_archive.unwrap_or(0);
+
+        network_config.coordinate_update_timeout = 
+            Duration::from_millis(self.raw_conf.coordinate_update_timeout_ms);
+        network_config.cluster_round_timeout = 
+            Duration::from_millis(self.raw_conf.cluster_round_timeout);
+        network_config.cluster_num = 
+            self.raw_conf.cluster_num;
+        network_config.fast_peer_local_group = 
+            self.raw_conf.fast_peer_local_group;
+        network_config.fast_peer_remote_group = 
+            self.raw_conf.fast_peer_remote_group;
+        network_config.fast_root_peer_per_group = 
+            self.raw_conf.fast_root_peer_per_group;
+
         Ok(network_config)
     }
 
@@ -489,6 +511,9 @@ impl Configuration {
     }
 
     pub fn tx_gen_config(&self) -> Option<TransactionGeneratorConfig> {
+        debug!("getting tx gen config");
+        debug!("test or dev = {}", self.is_test_or_dev_mode());
+        debug!("genesis secret = {:?}", self.raw_conf.genesis_secrets.clone());
         if self.is_test_or_dev_mode() &&
             // FIXME: this is not a good condition to check.
             self.raw_conf.genesis_secrets.is_some()

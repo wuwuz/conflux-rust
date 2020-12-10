@@ -18,10 +18,10 @@ use cfx_types::{H256, H520};
 use cfxkey::{recover, sign, KeyPair, Secret};
 use rlp::{Rlp, RlpStream};
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, VecDeque},
     net::{IpAddr, SocketAddr},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-    sync::Arc,
+    sync::{Arc, Mutex},
     iter::FromIterator,
 };
 use throttling::time_window_bucket::TimeWindowBucket;
@@ -41,6 +41,7 @@ const UPDATE_MAX_STEPS: u32 = 5; // Max iterations of coordainte update.
 const DEFAULT_THROTTLING_INTERVAL: Duration = Duration::from_secs(1);
 const DEFAULT_THROTTLING_LIMIT_PING: usize = 20;
 const DEFAULT_THROTTLING_LIMIT_FIND_NODES: usize = 10;
+pub const HISTORY_RTT_DATA_WINDOW_SIZE: usize = 5;
 
 struct PingRequest {
     // Time when the request was sent
@@ -49,6 +50,37 @@ struct PingRequest {
     node: NodeEntry,
     // The hash sent in the Ping request
     echo_hash: H256,
+}
+
+#[derive(Debug)]
+struct HistoryRTTData {
+    data: VecDeque<u64>,
+    //sum: u64,
+    //pub mean: u64,
+    median: u64,
+}
+
+impl HistoryRTTData {
+    pub fn new() -> Self {
+        HistoryRTTData {
+            data: Default::default(),
+            //mean: 0,
+            median: 0,
+        }
+    }
+    pub fn observe(&mut self, rtt: u64) {
+        if self.data.len() == HISTORY_RTT_DATA_WINDOW_SIZE {
+            self.data.pop_front();
+        }
+        self.data.push_back(rtt);
+
+        let mut tmp: Vec<u64> = self.data.iter().cloned().collect();
+        tmp.sort();
+        self.median = tmp[self.data.len() / 2 as usize];
+    }
+    pub fn get_median(&self) -> u64 {
+        self.median
+    }
 }
 
 
@@ -72,6 +104,9 @@ pub struct CoordinateManager {
     // Limits the response for PING/FIND_NODE packets
     ping_throttling: TimeWindowBucket<IpAddr>,
     find_nodes_throttling: TimeWindowBucket<IpAddr>,
+
+    // history rtt data -- smoothing the update procedure
+    history_rtt: HashMap<NodeId, Arc<Mutex<HistoryRTTData>>>,
 }
 
 impl CoordinateManager {
@@ -100,6 +135,7 @@ impl CoordinateManager {
                 DEFAULT_THROTTLING_INTERVAL,
                 DEFAULT_THROTTLING_LIMIT_FIND_NODES,
             ),
+            history_rtt: HashMap::new(),
         }
     }
 
@@ -369,9 +405,17 @@ impl CoordinateManager {
 
         if let Some(_node) = expected_node {
             // update the model based on rtt and remote coordinate
-            let mut model = self.vivaldi_model.write();
-            model.observe(&recv_coordinate, Duration::from_millis(rtt));
-            debug!("New Coord = {:?}", model.get_coordinate());
+            if self.history_rtt.contains_key(node_id) == false {
+                self.history_rtt.insert(node_id.clone(), Arc::new(Mutex::new(HistoryRTTData::new())));
+            }
+            if let Some(h) = self.history_rtt.get_mut(node_id) {
+                let mut history = h.lock().unwrap();
+                history.observe(rtt);
+                //debug!("history = {:?}", history);
+                let mut model = self.vivaldi_model.write();
+                model.observe(&recv_coordinate, Duration::from_millis(history.get_median()));
+                debug!("New Coord = {:?}", model.get_coordinate());
+            }
             Ok(())
         } else {
             debug!("Got unexpected Pong from {:?} ; request not found", &from);

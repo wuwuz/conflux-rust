@@ -761,11 +761,11 @@ impl NetworkServiceInner {
             )?;
             io.register_timer(
                 COORDINATE_UPDATE,
-                DEFAULT_COORDINATE_UPDATE_TIMEOUT,
+                self.config.coordinate_update_timeout,
             )?;
             io.register_timer(
                 COORDINATE_CLUSTER,
-                DEFAULT_COORDINATE_CLUSTER_TIMEOUT,
+                self.config.cluster_round_timeout,
             )?;
         }
         io.register_timer(NODE_TABLE, self.config.node_table_timeout)?;
@@ -941,9 +941,9 @@ impl NetworkServiceInner {
             match s.peer_type {
                 PeerLayerType::Fast => {
                     let group_id = self.node_db.read().cluster_result.get(id).unwrap().clone();
-                    let mut fast_peer_in_group = FAST_PEER_REMOTE_GROUP;
+                    let mut fast_peer_in_group = self.config.fast_peer_remote_group;
                     if group_id == self_group_id {
-                        fast_peer_in_group = FAST_PEER_LOCAL_GROUP;
+                        fast_peer_in_group = self.config.fast_peer_local_group;
                     }
                     cluster_connect_cnt[group_id] += 1;
                     cluster_group[group_id].insert(id.clone());
@@ -963,7 +963,7 @@ impl NetworkServiceInner {
 
                     debug!("connect cluster peers: session id = {:?}, type = {:?}, group = {}", id, peer_type, group_id);
 
-                    if cluster_root_connect_cnt[group_id] > FAST_ROOT_PEER_PER_GROUP {
+                    if cluster_root_connect_cnt[group_id] > self.config.fast_root_peer_per_group {
                         killing_peers.push(id.clone());
                         cluster_root_connect_cnt[group_id] -= 1;
                     }
@@ -993,13 +993,13 @@ impl NetworkServiceInner {
         let mut new_nodes_group: HashMap<NodeId, usize> = HashMap::new();
 
         for i in 0..cluster_num {
-            let mut fast_peer_in_group = FAST_PEER_REMOTE_GROUP;
+            let mut fast_peer_in_group = self.config.fast_peer_remote_group;
             if i == self_group_id {
-                fast_peer_in_group = FAST_PEER_LOCAL_GROUP;
+                fast_peer_in_group = self.config.fast_peer_local_group;
             }
             let sample_count = 
                 (fast_peer_in_group - cluster_connect_cnt[i as usize]) + 
-                (FAST_ROOT_PEER_PER_GROUP - cluster_root_connect_cnt[i as usize]);
+                (self.config.fast_root_peer_per_group - cluster_root_connect_cnt[i as usize]);
             
             debug!("connect cluster peers: need to sample {} peers in group {}", sample_count, i);
 
@@ -1873,7 +1873,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
             }
             COORDINATE_CLUSTER => {
                 let self_coord = self.vivaldi_model.read().get_coordinate().clone();
-                self.node_db.write().cluster_all_node(self.metadata.id().clone(), self_coord);
+                self.node_db.write().cluster_all_node(self.config.cluster_num, self.metadata.id().clone(), self_coord);
                 self.connect_cluster_peers(io);
             }
             NODE_TABLE => {
