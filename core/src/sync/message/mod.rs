@@ -18,6 +18,7 @@ mod get_terminal_block_hashes_response;
 mod handleable;
 mod heartbeat;
 mod coordinate_message;
+mod test_message;
 mod keys;
 mod message;
 mod metrics;
@@ -53,6 +54,7 @@ pub use self::{
     heartbeat::Heartbeat,
     coordinate_message::CoordinatePing,
     coordinate_message::CoordinatePong,
+    test_message::TestDelayModelMessage,
     keys::{Key, KeyContainer},
     message::{handle_rlp_message, msgid},
     new_block::NewBlock,

@@ -18,6 +18,7 @@ use crate::{
     NetworkContext as NetworkContextTrait, NetworkIoMessage,
     NetworkProtocolHandler, PeerInfo, ProtocolId, ProtocolInfo,
     UpdateNodeOperation, NODE_TAG_ARCHIVE, NODE_TAG_NODE_TYPE, PeerLayerType,
+    //check_delay_test,
 };
 use vivaldi::{
     vector::Dimension2,
@@ -2219,6 +2220,7 @@ impl<'a> NetworkContextTrait for NetworkContext<'a> {
         version_valid_till: ProtocolVersion, priority: SendQueuePriority,
     ) -> Result<(), Error>
     {
+        //check_delay_test(&msg);
         if version_valid_till < self.min_supported_version {
             bail!(ErrorKind::SendUnsupportedMessage {
                 protocol: self.protocol,

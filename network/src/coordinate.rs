@@ -430,10 +430,10 @@ impl CoordinateManager {
     }
 
     /// Complete the updating process
-    fn stop(&mut self) {
-        trace!("Completing Coordinate Updating");
-        self.update_round = None;
-    }
+    //fn stop(&mut self) {
+    //    trace!("Completing Coordinate Updating");
+    //    self.update_round = None;
+    //}
 
     fn check_expired(&mut self, uio: &UdpIoContext, time: Instant) {
         let mut nodes_to_expire = Vec::new();

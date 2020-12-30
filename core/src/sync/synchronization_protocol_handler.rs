@@ -15,6 +15,7 @@ use crate::{
             handle_rlp_message, msgid, Context, DynamicCapability,
             GetBlockHeadersResponse, Heartbeat, NewBlockHashes, StatusV2,
             StatusV3, TransactionDigests, CoordinatePing, 
+            TestDelayModelMessage,
         },
         node_type::NodeType,
         request_manager::{try_get_block_hashes, Request},
@@ -52,6 +53,7 @@ use vivaldi::{
     vector::Dimension2, 
     Coordinate,
 };
+use crate::message::MessageProtocolVersionBound;
 
 lazy_static! {
     static ref TX_PROPAGATE_METER: Arc<dyn Meter> =
@@ -79,6 +81,7 @@ const EXPIRE_BLOCK_GC_TIMER: TimerToken = 8;
 const HEARTBEAT_TIMER: TimerToken = 9;
 pub const CHECK_RPC_REQUEST_TIMER: TimerToken = 11;
 const COORDINATE_TIMER: TimerToken = 12;
+const DELAY_TEST_TIMER: TimerToken = 13;
 
 const MAX_TXS_BYTES_TO_PROPAGATE: usize = 1024 * 1024; // 1MB
 
@@ -1263,6 +1266,64 @@ impl SynchronizationProtocolHandler {
         }
     }
 
+    fn produce_delay_test_msg(&self, seq_num: u32) -> TestDelayModelMessage {
+        let size: usize = 10000;
+        let mut load: Vec<u8> = vec![0; size];
+        // special identifier: 
+        // 0xa0...0xaf
+        for i in 0..16 {
+            let tmp = match i {
+                0..=7 => i,
+                _ => 15 - i,
+            };
+            load[i + 1] = (((0xa << 4) + tmp) & 255) as u8;
+        }
+        load[0] = (seq_num & 255) as u8;
+        load[17] = (seq_num & 255) as u8;
+
+        TestDelayModelMessage {
+            seq_num,
+            load,
+        }
+    }
+
+    fn delay_test(
+        &self, io: &dyn NetworkContext,
+    ) -> Result<(), NetworkError> {
+        debug!("DelayTest: Starting delay test");
+        let peer_ids: Vec<NodeId> = self
+            .syn
+            .peers
+            .read()
+            .keys()
+             //.filter(|&id| *id != *skip_id)
+            .map(|x| *x)
+            .collect();
+
+
+        let mut seq_num = 1;
+        for id in peer_ids {
+            let msg = self.produce_delay_test_msg(seq_num);
+
+            let msg_version_introduced = msg.version_introduced();
+            let mut msg_version_valid_till = msg.version_valid_till();
+            if msg_version_valid_till == self.protocol_version {
+                msg_version_valid_till = ProtocolVersion(std::u8::MAX);
+            }
+            let peer_version = self.syn.get_peer_version(&id)?;
+            if peer_version >= msg_version_introduced
+                && peer_version <= msg_version_valid_till {
+
+                msg.send(io, &id)?;
+                //msg.send_and_print(io, &id)?;
+                seq_num += 1;
+            }
+        }
+
+        Ok(())
+    }
+
+
     fn produce_coordinate_ping(&self) -> CoordinatePing {
         let send_time = SystemTime::now();
         let send_time_milli = send_time.duration_since(UNIX_EPOCH).expect("cannot convert systime").as_millis();
@@ -2108,6 +2169,11 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
         )
         .expect("Error registering EXPIRE_BLOCK_GC_TIMER");
         io.register_timer(
+            DELAY_TEST_TIMER,
+            Duration::from_millis(5000),
+        )
+        .expect("Error registering DELAY_TEST_TIMER");
+        io.register_timer(
             COORDINATE_TIMER,
             Duration::from_millis(3000),
         )
@@ -2271,6 +2337,9 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
                 debug!("Coordinate timer!");
                 // FIXME: uncomment the code
                 //self.send_coordinate(io);
+            }
+            DELAY_TEST_TIMER => {
+                self.delay_test(io);
             }
             _ => warn!("Unknown timer {} triggered.", timer),
         }

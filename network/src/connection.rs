@@ -6,6 +6,7 @@ use crate::{
     io::{IoContext, StreamToken},
     throttling::THROTTLING_SERVICE,
     Error, ErrorKind,
+    check_delay_test,
 };
 use bytes::{Bytes, BytesMut};
 use lazy_static::lazy_static;
@@ -145,6 +146,7 @@ impl Packet {
     }
 
     fn is_send_completed(&self) -> bool { self.sending_pos >= self.data.len() }
+
 }
 
 impl Drop for Packet {
@@ -290,10 +292,14 @@ impl<Socket: GenericSocket> GenericConnection<Socket> {
             .as_mut()
             .expect("should pop packet from send queue");
 
+        
+
         let size = packet.write(&mut self.socket)?;
         if size == 0 {
             WRITABLE_ZERO_COUNTER.mark(1);
         }
+
+        check_delay_test(&packet.data);
 
         trace!(
             "Succeed to send socket data, token = {}, size = {}",

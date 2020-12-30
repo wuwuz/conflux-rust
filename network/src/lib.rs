@@ -303,6 +303,15 @@ pub trait NetworkContext {
         version_valid_till: ProtocolVersion, priority: SendQueuePriority,
     ) -> Result<(), Error>;
 
+    /*
+    fn send_with_special_flag(
+        &self, node_id: &NodeId, msg: Vec<u8>,
+        min_protocol_version: ProtocolVersion,
+        version_valid_till: ProtocolVersion, priority: SendQueuePriority,
+        special_flag: u32,
+    ) -> Result<(), Error>;
+    */
+
     fn disconnect_peer(
         &self, node_id: &NodeId, op: Option<UpdateNodeOperation>, reason: &str,
     );
@@ -455,4 +464,38 @@ pub fn parse_msg_id_leb128_2_bytes_at_most(msg: &mut &[u8]) -> u16 {
     *msg = &buf[..pos];
 
     ret
+}
+
+pub fn check_delay_test(data: &Vec<u8>) {
+    let n = data.len();
+    if n < 100 {
+        return;
+    }
+    //debug!("DelayTest: checking packet type, data size = {}", data.len());
+    for i in 0..n {
+        if i > 100 {
+            break;
+        }
+        let mut flag = true;
+        for j in 0..16 {
+            if i + j * 2 >= n {
+                flag = false;
+                break;
+            }
+            let tmp = match j {
+                0..=7 => j,
+                _ => 15 - j,
+            };
+            let v = (((0xa << 4) + tmp) & 255) as u8;
+            if data[i + j * 2] != v {
+                flag = false;
+                break;
+            }
+        }
+
+        if flag == true {
+            let seq_num = data[i + 31];
+            debug!("DelayTest: Sending package {}", seq_num);
+        }
+    }
 }

@@ -88,6 +88,38 @@ pub trait Message:
         self.send_with_throttling(io, node_id, false)
     }
 
+    fn send_and_print(
+        &self, io: &dyn NetworkContext, node_id: &NodeId,
+    ) -> Result<(), NetworkError> {
+        let msg = self.encode();
+        debug!("DelayTest: the encoded packet is {:?}", msg);
+        let size = msg.len();
+
+        if let Err(e) = io.send(
+            node_id,
+            msg,
+            self.version_introduced(),
+            self.version_valid_till(),
+            self.priority(),
+        ) {
+            debug!("Error sending message: {:?}", e);
+            return Err(e);
+        };
+
+        debug!(
+            "Send message({}) to peer {}, protocol {:?}",
+            self.msg_name(),
+            node_id,
+            io.get_protocol(),
+        );
+
+        if !io.is_peer_self(node_id) {
+            metric_message(self.msg_id(), size);
+        }
+
+        Ok(())
+    }
+
     fn send_with_throttling(
         &self, io: &dyn NetworkContext, node_id: &NodeId,
         throttling_disabled: bool,
