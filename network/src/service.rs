@@ -436,7 +436,7 @@ pub struct HostMetadata {
 impl HostMetadata {
     pub(crate) fn secret(&self) -> &Secret { self.keys.secret() }
 
-    pub(crate) fn id(&self) -> &NodeId { self.keys.public() }
+    pub fn id(&self) -> &NodeId { self.keys.public() }
 }
 
 #[derive(Copy, Clone)]
@@ -464,6 +464,7 @@ pub struct NetworkServiceInner {
     timers: RwLock<HashMap<TimerToken, ProtocolTimer>>,
     timer_counter: RwLock<usize>,
     pub node_db: RwLock<NodeDatabase>,
+    pub cluster_result: RwLock<HashMap<NodeId, usize>>,
     reserved_nodes: RwLock<HashSet<NodeId>>,
     dropped_nodes: RwLock<HashSet<NodeId>>,
 
@@ -658,6 +659,7 @@ impl NetworkServiceInner {
             dropped_nodes: RwLock::new(HashSet::new()),
             is_consortium: config.is_consortium,
             delayed_queue: None,
+            cluster_result: RwLock::new(HashMap::new()),
         };
 
         for n in &config.boot_nodes {
@@ -756,6 +758,7 @@ impl NetworkServiceInner {
                 self.config.discovery_round_timeout,
             )?;
 
+            /*
             io.register_timer(
                 COORDINATE_REFRESH,
                 DEFAULT_COORDINATE_REFRESH_TIMEOUT,
@@ -768,6 +771,7 @@ impl NetworkServiceInner {
                 COORDINATE_CLUSTER,
                 self.config.cluster_round_timeout,
             )?;
+            */
         }
         io.register_timer(NODE_TABLE, self.config.node_table_timeout)?;
         io.register_timer(CHECK_SESSIONS, DEFAULT_CHECK_SESSIONS_TIMEOUT)?;
@@ -916,15 +920,16 @@ impl NetworkServiceInner {
         //let node_db = self.node_db.read();
 
         // 1. count the current sessions
-        let cluster_num = self.node_db.read().centers.len();
-        let mut cluster_connect_cnt = vec![0; cluster_num];
-        let mut cluster_group: Vec<HashSet<NodeId>> = vec![Default::default(); cluster_num];
-        let mut cluster_root_connect_cnt = vec![0; cluster_num];
+        let mut inner_cluster_connection_cnt: usize = 0;
+        let mut inner_cluster_connection_set: HashSet<NodeId> = HashSet::new();
+        let mut first_hop_connection_cnt: usize = 0;
         let mut killing_peers: Vec<NodeId> = Vec::new();
-        //let mut existing_session_ids = Vec::new();
 
         let (handshake_count, egress_count, ingress_count) =
             self.sessions.stat();
+
+        debug!("connect cluster peers: stat = (handshaking {}, egress {}, ingress {})", 
+            handshake_count, egress_count, ingress_count);
 
         let sessions = self.sessions.all();
         
@@ -937,51 +942,32 @@ impl NetworkServiceInner {
                     continue;
                 }
             };
-            //let id = id.unwrap();
-            //existing_session_ids.push(id.clone());
             match s.peer_type {
                 PeerLayerType::Fast => {
-                    let group_id = self.node_db.read().cluster_result.get(id).unwrap().clone();
-                    let mut fast_peer_in_group = self.config.fast_peer_remote_group;
-                    if group_id == self_group_id {
-                        fast_peer_in_group = self.config.fast_peer_local_group;
-                    }
-                    cluster_connect_cnt[group_id] += 1;
-                    cluster_group[group_id].insert(id.clone());
-
-                    debug!("connect cluster peers: session id = {:?}, type = {:?}, group = {}", id, peer_type, group_id);
-
-                    // FIXME: use network config
-                    if cluster_connect_cnt[group_id] > fast_peer_in_group {
+                    let group_id = self.cluster_result.read().get(id).unwrap().clone();
+                    if inner_cluster_connection_cnt == self.config.fast_peer_local_group 
+                        || group_id != self_group_id 
+                    {
                         killing_peers.push(id.clone());
-                        cluster_connect_cnt[group_id] -= 1;
+                    } else {
+                        debug!("connect cluster peers: session id = {:?}, type = {:?}, group = {}", id, peer_type, group_id);
+                        inner_cluster_connection_set.insert(id.clone());
+                        inner_cluster_connection_cnt += 1;
                     }
+
                 }
                 PeerLayerType::FastRoot => {
-                    let group_id = self.node_db.read().cluster_result.get(id).unwrap().clone();
-                    cluster_root_connect_cnt[group_id] += 1;
-                    cluster_group[group_id].insert(id.clone());
-
-                    debug!("connect cluster peers: session id = {:?}, type = {:?}, group = {}", id, peer_type, group_id);
-
-                    if cluster_root_connect_cnt[group_id] > self.config.fast_root_peer_per_group {
-                        killing_peers.push(id.clone());
-                        cluster_root_connect_cnt[group_id] -= 1;
+                    if first_hop_connection_cnt == self.config.first_hop_peers {
+                        first_hop_connection_cnt += 1;
                     }
                 }
                 _ => {
-                    if let Some(group_id) = self.node_db.read().cluster_result.get(id) {
-                        cluster_group[*group_id].insert(id.clone());
-                    } else {
-                        debug!("connect cluster peers: No group info {:?}", id);
-                    }
-                    //let group_id = self.node_db.read().cluster_result.get(id).unwrap().clone();
                 }
             }
         }
 
-        debug!("connect cluster peers: stat = {:?}", &cluster_connect_cnt);
-        debug!("connect cluster peers: root stat = {:?}", &cluster_root_connect_cnt);
+        debug!("connect cluster peers: inner cluster = {:?}", inner_cluster_connection_cnt);
+        debug!("connect cluster peers: first hop = {:?}", first_hop_connection_cnt);
 
         // 2. kill extra session
         for peer in killing_peers.iter() {
@@ -990,69 +976,53 @@ impl NetworkServiceInner {
         }
 
         // 3. sample new peers
-        let mut new_nodes: HashSet<NodeId> = HashSet::new();
-        let mut new_nodes_group: HashMap<NodeId, usize> = HashMap::new();
+        let mut started = 0;
 
-        for i in 0..cluster_num {
-            let mut fast_peer_in_group = self.config.fast_peer_remote_group;
-            if i == self_group_id {
-                fast_peer_in_group = self.config.fast_peer_local_group;
-            }
-            let sample_count = 
-                (fast_peer_in_group - cluster_connect_cnt[i as usize]) + 
-                (self.config.fast_root_peer_per_group - cluster_root_connect_cnt[i as usize]);
-            
-            debug!("connect cluster peers: need to sample {} peers in group {}", sample_count, i);
-
-            let group_samples = self.node_db.read().sample_trusted_node_ids_within_group(
-                sample_count as u32, 
-                i as usize,
-                &cluster_group[i as usize],
-                &self.config.ip_filter,
-            );
-            for sample in group_samples.iter() {
-                if self.sessions.contains_node(sample) == true {
-                    debug!("connect cluster peers: sample an id that already connected {:?}", sample);
-                }
-                new_nodes_group.insert(sample.clone(), i);
-            }
-            debug!("connect cluster peers: successfully sample {} peers in group {} : {:?}", group_samples.len(), i, &group_samples);
-            //new_node.chain(group_samples);
-            new_nodes.extend(&group_samples);
+        //3.a) connect to inner cluster peers
+        let sample_count = self.config.fast_peer_local_group - inner_cluster_connection_cnt;
+        debug!("connect cluster peers: need to sample {} peers in local group", sample_count);
+        let group_samples = self.node_db.read().sample_trusted_node_ids_within_group(
+            sample_count as u32, 
+            self_group_id as usize,
+            &inner_cluster_connection_set,
+            &self.config.ip_filter,
+        );
+        for id in group_samples
+            .iter()
+            .filter(|id| !self.sessions.contains_node(id) && **id != self_id) 
+        {
+            self.connect_peer(&id, io, Some(PeerLayerType::Fast));
+            started += 1;
+            debug!("connect cluster peers: connect to new local cluster peer {:?}", &id);
         }
 
-        // 4. connect to new group
-        let max_handshakes_per_round = self.config.max_handshakes / 2;
-        let mut started: usize = 0;
-        for id in new_nodes
+        //3.b) connect to first hop peers
+        let random_sample_count = self.config.first_hop_peers - first_hop_connection_cnt;
+        let random_samples = self.node_db.read().sample_trusted_node_ids(
+            random_sample_count as u32,
+            &self.config.ip_filter,
+        );
+        for id in random_samples
             .iter()
             .filter(|id| !self.sessions.contains_node(id) && **id != self_id)
             .take(min(
-                max_handshakes_per_round,
+                self.config.max_handshakes / 2,
                 self.config.max_handshakes.saturating_sub(handshake_count),
             ))
         {
-            let group = new_nodes_group.get(id).unwrap();
-            let mut peer_type = PeerLayerType::Fast;
-            if cluster_connect_cnt[*group] == 2 {
-                peer_type = PeerLayerType::FastRoot;
-                cluster_root_connect_cnt[*group] += 1;
-            } else {
-                cluster_connect_cnt[*group] += 1;
-            }
-            debug!("connect cluster peers: connect to new cluster peer {:?}, type = {:?}", &id, peer_type);
-            self.connect_peer(&id, io, Some(peer_type));
+            self.connect_peer(&id, io, Some(PeerLayerType::FastRoot));
             started += 1;
+            debug!("connect cluster peers: connect to new first hop peer {:?}", &id);
         }
         debug!(
-            "Connecting peers: {} sessions, {} pending + {} started",
+            "connect cluster peers: {} sessions, {} pending + {} started",
             egress_count + ingress_count,
             handshake_count,
             started
         );
         if egress_count + ingress_count == 0 {
             warn!(
-                "No peers connected at this moment, {} pending + {} started",
+                "connect cluster peers: no connected at this moment, {} pending + {} started",
                 handshake_count, started
             );
         }
@@ -1321,11 +1291,13 @@ impl NetworkServiceInner {
 
             // Handshake is just finished, first process the outcome from the
             // handshake.
-            let peer_type;
+            let peer_type = PeerLayerType::Random;
+            /*
             {
                 let sess = session.read();
                 peer_type = sess.peer_type.clone();
             }
+            */
             // FIXME: DEADLOCK HERE?????
             //let peer_type = PeerLayerType::Random;
             if handshake_done {
@@ -1875,6 +1847,8 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
             COORDINATE_CLUSTER => {
                 let self_coord = self.vivaldi_model.read().get_coordinate().clone();
                 self.node_db.write().cluster_all_node(self.config.cluster_num, self.metadata.id().clone(), self_coord);
+                let mut cluster_result = self.cluster_result.write();
+                *cluster_result = self.node_db.read().get_cluster_result().clone();
                 self.connect_cluster_peers(io);
             }
             NODE_TABLE => {

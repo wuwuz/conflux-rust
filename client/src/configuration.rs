@@ -201,10 +201,10 @@ build_config! {
         //2nd layer config
         (coordinate_update_timeout_ms, (u64), 1_000)
         (cluster_round_timeout, (u64), 5_000)
-        (cluster_num, (usize), 3)
-        (fast_peer_local_group, (usize), 2)
-        (fast_peer_remote_group, (usize), 1)
-        (fast_root_peer_per_group, (usize), 1)
+        (cluster_num, (usize), 8)
+        (fast_peer_local_group, (usize), 8)
+        //(fast_peer_remote_group, (usize), 1)
+        (first_hop_peers, (usize), 64)
 
         // Transaction cache/transaction pool section.
         (tx_cache_index_maintain_timeout_ms, (u64), 300_000)
@@ -380,10 +380,8 @@ impl Configuration {
             self.raw_conf.cluster_num;
         network_config.fast_peer_local_group = 
             self.raw_conf.fast_peer_local_group;
-        network_config.fast_peer_remote_group = 
-            self.raw_conf.fast_peer_remote_group;
-        network_config.fast_root_peer_per_group = 
-            self.raw_conf.fast_root_peer_per_group;
+        network_config.first_hop_peers = 
+            self.raw_conf.first_hop_peers;
 
         Ok(network_config)
     }
@@ -613,6 +611,8 @@ impl Configuration {
                 .max_trans_count_received_in_catch_up,
             min_peers_tx_propagation: self.raw_conf.min_peers_tx_propagation,
             max_peers_tx_propagation: self.raw_conf.max_peers_tx_propagation,
+            max_cluster_peers_tx_prop: self.raw_conf.fast_peer_local_group,
+            max_first_hop_peers_tx_prop: self.raw_conf.first_hop_peers,
             max_downloading_chunks: self.raw_conf.max_downloading_chunks,
             test_mode: self.is_test_mode(),
             dev_mode: self.is_dev_mode(),

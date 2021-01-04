@@ -457,6 +457,12 @@ impl NodeDatabase {
             println!("NodeId = {:?} Coord = {:?}", id, coord);
         }
     }
+
+    pub fn get_cluster_result(
+        &self,
+    ) -> &HashMap<NodeId, usize>{
+        &self.cluster_result
+    }
     
     pub fn cluster_all_node(
         &mut self,

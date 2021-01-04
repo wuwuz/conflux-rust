@@ -605,6 +605,7 @@ def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, t
             print(latencies[i])
 
     for i in range(num_nodes):
+        print(peer[i])
         t = ConnectThread(nodes, i, peer[i], latencies, log, min_peers=sample)
         t.start()
         threads.append(t)

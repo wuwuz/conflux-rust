@@ -152,8 +152,7 @@ pub struct NetworkConfiguration {
     pub cluster_round_timeout: Duration,
     pub cluster_num: usize,
     pub fast_peer_local_group: usize,
-    pub fast_peer_remote_group: usize,
-    pub fast_root_peer_per_group: usize,
+    pub first_hop_peers: usize,
 }
 
 impl NetworkConfiguration {
@@ -190,8 +189,7 @@ impl NetworkConfiguration {
             cluster_round_timeout: Duration::default(),
             cluster_num: 1,
             fast_peer_local_group: 0,
-            fast_peer_remote_group: 0,
-            fast_root_peer_per_group: 0,
+            first_hop_peers: 0,
         }
     }
 

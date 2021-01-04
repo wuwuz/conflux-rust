@@ -371,6 +371,7 @@ impl CoordinateManager {
         let self_group_id = self.id.to_low_u64_le() % 3;
         let opponent_group_id = node_id.to_low_u64_le() % 3;
 
+        //FIXME: still 3 group!!!!!!!!!!!!!!!!!!!!!!!!!!!
         // if they are not in the same group, the rtt is 500ms
         if self_group_id != opponent_group_id  {
             rtt += 1000;

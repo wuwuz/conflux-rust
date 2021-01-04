@@ -36,6 +36,7 @@ use metrics::{register_meter_with_group, Meter, MeterTimer};
 use network::{
     node_table::NodeId, service::ProtocolVersion,
     throttling::THROTTLING_SERVICE, Error as NetworkError, HandlerWorkType,
+    NetworkService,
     NetworkContext, NetworkProtocolHandler, UpdateNodeOperation, PeerLayerType,
 };
 use parking_lot::{Mutex, RwLock};
@@ -355,6 +356,8 @@ pub struct SynchronizationProtocolHandler {
     pub protocol_version: ProtocolVersion,
 
     pub protocol_config: ProtocolConfiguration,
+    #[ignore_malloc_size_of = "only stores reference to network"]
+    pub network: Arc<NetworkService>,
     pub graph: SharedSynchronizationGraph,
     pub syn: Arc<SynchronizationState>,
     pub request_manager: Arc<RequestManager>,
@@ -415,6 +418,8 @@ pub struct ProtocolConfiguration {
     pub max_trans_count_received_in_catch_up: u64,
     pub min_peers_tx_propagation: usize,
     pub max_peers_tx_propagation: usize,
+    pub max_first_hop_peers_tx_prop: usize,
+    pub max_cluster_peers_tx_prop: usize,
     pub max_downloading_chunks: usize,
     pub test_mode: bool,
     pub dev_mode: bool,
@@ -434,6 +439,7 @@ impl SynchronizationProtocolHandler {
         initial_sync_phase: SyncPhaseType,
         sync_graph: SharedSynchronizationGraph,
         light_provider: Arc<LightProvider>,
+        network: Arc<NetworkService>,
     ) -> Self
     {
         let sync_state = Arc::new(SynchronizationState::new(
@@ -483,6 +489,7 @@ impl SynchronizationProtocolHandler {
             light_provider,
             vivaldi_model,
             coordinate_db,
+            network,
         }
     }
 
@@ -1302,21 +1309,23 @@ impl SynchronizationProtocolHandler {
 
 
         let mut seq_num = 1;
-        for id in peer_ids {
-            let msg = self.produce_delay_test_msg(seq_num);
+        for _i in 0..10 {
+            for id in peer_ids.iter() {
+                let msg = self.produce_delay_test_msg(seq_num);
 
-            let msg_version_introduced = msg.version_introduced();
-            let mut msg_version_valid_till = msg.version_valid_till();
-            if msg_version_valid_till == self.protocol_version {
-                msg_version_valid_till = ProtocolVersion(std::u8::MAX);
-            }
-            let peer_version = self.syn.get_peer_version(&id)?;
-            if peer_version >= msg_version_introduced
-                && peer_version <= msg_version_valid_till {
+                let msg_version_introduced = msg.version_introduced();
+                let mut msg_version_valid_till = msg.version_valid_till();
+                if msg_version_valid_till == self.protocol_version {
+                    msg_version_valid_till = ProtocolVersion(std::u8::MAX);
+                }
+                let peer_version = self.syn.get_peer_version(id)?;
+                if peer_version >= msg_version_introduced
+                    && peer_version <= msg_version_valid_till {
 
-                msg.send(io, &id)?;
-                //msg.send_and_print(io, &id)?;
-                seq_num += 1;
+                    msg.send(io, id)?;
+                    //msg.send_and_print(io, &id)?;
+                    seq_num += 1;
+                }
             }
         }
 
@@ -1421,8 +1430,7 @@ impl SynchronizationProtocolHandler {
 
         Ok(())
     }
-
-    fn select_peers_for_transactions(&self) -> Vec<NodeId> {
+fn select_peers_for_transactions(&self) -> Vec<NodeId> {
         let num_peers = self.syn.peers.read().len() as f64;
         let throttle_ratio = THROTTLING_SERVICE.read().get_throttling_ratio();
 
@@ -1469,29 +1477,89 @@ impl SynchronizationProtocolHandler {
         peers
     }
 
+    /*
+    fn select_peers_for_transactions(&self) -> Vec<NodeId> {
+        //1. select peers inside of the cluster
+
+        let network_inner = self.network.inner.as_ref().unwrap().clone();
+        let self_id = network_inner.metadata.id().clone();
+        let cluster_result = network_inner.cluster_result.read();
+        let mut cluster_peers = Vec::new();
+        if let Some(self_group_id) = cluster_result.get(&self_id) {
+
+            for (id, _peer) in self.syn.peers.read().iter() {
+                if let Some(group_id) = cluster_result.get(id) {
+                    if self_group_id == group_id {
+                        cluster_peers.push(id.clone());
+                    }
+                }
+            }
+
+            cluster_peers.shuffle(&mut random::new());
+            cluster_peers.truncate(self.protocol_config.max_cluster_peers_tx_prop);
+        }
+
+        drop(cluster_result);
+
+        let cluster_peer_cnt = cluster_peers.len();
+        let mut peers: HashSet<NodeId> = HashSet::from_iter(cluster_peers);
+
+        let num_peers = self.syn.peers.read().len() as f64;
+        let throttle_ratio = THROTTLING_SERVICE.read().get_throttling_ratio();
+
+        // min(sqrt(x)/x, throttle_ratio)
+        let chosen_size = (num_peers.powf(-0.5).min(throttle_ratio) * num_peers)
+            .round() as usize;
+
+        let num_peers = chosen_size
+            .max(self.protocol_config.min_peers_tx_propagation)
+            .min(self.protocol_config.max_peers_tx_propagation);
+
+        let random_selected_peers: HashSet<NodeId> = 
+            HashSet::from_iter(
+            PeerFilter::new(msgid::TRANSACTION_DIGESTS) 
+            .select_n(num_peers + cluster_peer_cnt, &self.syn)
+            //.iter()
+            //.cloned()
+            );
+
+        // finally, we only select (num_peers - cluster_peer_cnt peers) random peers
+        let mut random_peer_cnt = 0;
+        for id in random_selected_peers.iter() {
+            if peers.insert(id.clone()) == true {
+                random_peer_cnt += 1;
+            }
+            if peers.len() == num_peers {
+                break;
+            }
+        }
+
+        debug!("TX Propagate: Selecting {} random peers, {} cluster peers", random_peer_cnt, cluster_peer_cnt);
+
+        let peers = peers.iter().cloned().collect();
+        peers
+    }
+    */
+
     fn fast_propagate_origin_transactions_to_cluster_peers(
         &self, io: &dyn NetworkContext, 
     ) {
         debug!("TX propagate(fast): start");
         // select the FastRoot type peers as the destinations
-        let mut lucky_peers = Vec::new(); 
-        {
-            let raw_peers = self.syn.peers.read();
-            for (id, peer) in raw_peers.iter() {
-                let peer_info = peer.read();
+        //let num_peers = 
+        //    .max(self.protocol_config.min_peers_tx_propagation)
+        //    .min(self.protocol_config.max_peers_tx_propagation);
+        let num_peers = self.protocol_config.max_first_hop_peers_tx_prop;
 
-                if peer_info.peer_type == PeerLayerType::FastRoot 
-                //    && !peer_info.capabilities
-                //        .contains(DynamicCapability::NormalPhase(true)) 
-                {
-                    lucky_peers.push(id.clone());
-                }
-            }
-        }
+        let lucky_peers = 
+            PeerFilter::new(msgid::TRANSACTION_DIGESTS) 
+            .select_n(num_peers, &self.syn);
 
         if lucky_peers.is_empty() {
             debug!("TX Propagate(fast): No peers");
             return;
+        } else {
+            debug!("TX Propagate(fast): Select {} peers", lucky_peers.len());
         }
 
         // 29 since the remaining bytes is 29.
@@ -1861,7 +1929,7 @@ impl SynchronizationProtocolHandler {
         if self.syn.peers.read().is_empty() || self.catch_up_mode() {
             return;
         }
-        self.fast_propagate_origin_transactions_to_cluster_peers(io);
+        //self.fast_propagate_origin_transactions_to_cluster_peers(io);
 
         let peers = self.select_peers_for_transactions();
         self.propagate_transactions_to_peers(io, peers);
@@ -2255,6 +2323,7 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
     ) {
         // 1. store the tag in some database
         //db.push(peer, peer_type);
+        /*
         {
             let mut map = 
                 self.syn
@@ -2268,6 +2337,7 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
                 }
             }
         }
+        */
         self.on_peer_connected(io, peer, peer_protocol_version);
 
         // 2. On receiving status message, retreive the tag from the db
@@ -2339,7 +2409,7 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
                 //self.send_coordinate(io);
             }
             DELAY_TEST_TIMER => {
-                self.delay_test(io);
+                //self.delay_test(io);
             }
             _ => warn!("Unknown timer {} triggered.", timer),
         }

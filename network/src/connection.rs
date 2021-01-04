@@ -299,7 +299,7 @@ impl<Socket: GenericSocket> GenericConnection<Socket> {
             WRITABLE_ZERO_COUNTER.mark(1);
         }
 
-        check_delay_test(&packet.data);
+        //check_delay_test(&packet.data);
 
         trace!(
             "Succeed to send socket data, token = {}, size = {}",

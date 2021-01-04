@@ -295,8 +295,8 @@ impl TransactionPool {
                         false,
                     ) {
                         debug!(
-                            "tx {:?} fails to be inserted to pool, err={:?}",
-                            &tx.hash, e
+                            "tx {:?} fails to be inserted to pool, err={:?}, is_origin={}",
+                            &tx.hash, e, is_origin,
                         );
                         failure.insert(tx.hash(), e);
                         continue;
@@ -306,12 +306,14 @@ impl TransactionPool {
                         to_prop.insert(tx.hash.clone(), tx.clone());
                     }
 
+                    /*
                     if is_origin == true {
                         let mut origin_to_prop = self.origin_to_propagate_trans.write();
                         if !origin_to_prop.contains_key(&tx.hash) {
                             origin_to_prop.insert(tx.hash, tx);
                         }
                     }
+                    */
                 }
             }
             Err(e) => {

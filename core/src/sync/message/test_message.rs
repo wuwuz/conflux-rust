@@ -9,7 +9,7 @@ use crate::sync::{
 //use cfx_types::H256;
 use rlp_derive::{RlpDecodable, RlpEncodable};
 //use std::collections::HashSet;
-use std::time::{Instant};
+//use std::time::{Instant};
 
 #[derive(Debug, RlpDecodable, RlpEncodable)]
 pub struct TestDelayModelMessage {
