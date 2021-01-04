@@ -306,14 +306,12 @@ impl TransactionPool {
                         to_prop.insert(tx.hash.clone(), tx.clone());
                     }
 
-                    /*
                     if is_origin == true {
                         let mut origin_to_prop = self.origin_to_propagate_trans.write();
                         if !origin_to_prop.contains_key(&tx.hash) {
                             origin_to_prop.insert(tx.hash, tx);
                         }
                     }
-                    */
                 }
             }
             Err(e) => {

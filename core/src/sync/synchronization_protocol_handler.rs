@@ -357,7 +357,7 @@ pub struct SynchronizationProtocolHandler {
 
     pub protocol_config: ProtocolConfiguration,
     #[ignore_malloc_size_of = "only stores reference to network"]
-    pub network: Arc<NetworkService>,
+    pub network: Option<Arc<NetworkService>>,
     pub graph: SharedSynchronizationGraph,
     pub syn: Arc<SynchronizationState>,
     pub request_manager: Arc<RequestManager>,
@@ -439,7 +439,7 @@ impl SynchronizationProtocolHandler {
         initial_sync_phase: SyncPhaseType,
         sync_graph: SharedSynchronizationGraph,
         light_provider: Arc<LightProvider>,
-        network: Arc<NetworkService>,
+        network: Option<Arc<NetworkService>>,
     ) -> Self
     {
         let sync_state = Arc::new(SynchronizationState::new(
@@ -1430,7 +1430,12 @@ impl SynchronizationProtocolHandler {
 
         Ok(())
     }
-fn select_peers_for_transactions(&self) -> Vec<NodeId> {
+
+    /*
+    fn select_peers_for_transactions(&self, io: &dyn NetworkContext) -> Vec<NodeId> {
+        let id = io.self_node_id();
+        let group_id = io.get_cluster_result(&id);
+        debug!("self id = {:?}, group id = {:?}", id, group_id);
         let num_peers = self.syn.peers.read().len() as f64;
         let throttle_ratio = THROTTLING_SERVICE.read().get_throttling_ratio();
 
@@ -1476,19 +1481,17 @@ fn select_peers_for_transactions(&self) -> Vec<NodeId> {
 
         peers
     }
+    */
 
-    /*
-    fn select_peers_for_transactions(&self) -> Vec<NodeId> {
+    fn select_peers_for_transactions(&self, io: &dyn NetworkContext) -> Vec<NodeId> {
         //1. select peers inside of the cluster
 
-        let network_inner = self.network.inner.as_ref().unwrap().clone();
-        let self_id = network_inner.metadata.id().clone();
-        let cluster_result = network_inner.cluster_result.read();
+        let self_id = io.self_node_id();
         let mut cluster_peers = Vec::new();
-        if let Some(self_group_id) = cluster_result.get(&self_id) {
+        if let Some(self_group_id) = io.get_cluster_result(&self_id) {
 
             for (id, _peer) in self.syn.peers.read().iter() {
-                if let Some(group_id) = cluster_result.get(id) {
+                if let Some(group_id) = io.get_cluster_result(id) {
                     if self_group_id == group_id {
                         cluster_peers.push(id.clone());
                     }
@@ -1498,8 +1501,6 @@ fn select_peers_for_transactions(&self) -> Vec<NodeId> {
             cluster_peers.shuffle(&mut random::new());
             cluster_peers.truncate(self.protocol_config.max_cluster_peers_tx_prop);
         }
-
-        drop(cluster_result);
 
         let cluster_peer_cnt = cluster_peers.len();
         let mut peers: HashSet<NodeId> = HashSet::from_iter(cluster_peers);
@@ -1539,7 +1540,6 @@ fn select_peers_for_transactions(&self) -> Vec<NodeId> {
         let peers = peers.iter().cloned().collect();
         peers
     }
-    */
 
     fn fast_propagate_origin_transactions_to_cluster_peers(
         &self, io: &dyn NetworkContext, 
@@ -1929,9 +1929,9 @@ fn select_peers_for_transactions(&self) -> Vec<NodeId> {
         if self.syn.peers.read().is_empty() || self.catch_up_mode() {
             return;
         }
-        //self.fast_propagate_origin_transactions_to_cluster_peers(io);
+        self.fast_propagate_origin_transactions_to_cluster_peers(io);
 
-        let peers = self.select_peers_for_transactions();
+        let peers = self.select_peers_for_transactions(io);
         self.propagate_transactions_to_peers(io, peers);
     }
 

@@ -758,7 +758,6 @@ impl NetworkServiceInner {
                 self.config.discovery_round_timeout,
             )?;
 
-            /*
             io.register_timer(
                 COORDINATE_REFRESH,
                 DEFAULT_COORDINATE_REFRESH_TIMEOUT,
@@ -771,7 +770,6 @@ impl NetworkServiceInner {
                 COORDINATE_CLUSTER,
                 self.config.cluster_round_timeout,
             )?;
-            */
         }
         io.register_timer(NODE_TABLE, self.config.node_table_timeout)?;
         io.register_timer(CHECK_SESSIONS, DEFAULT_CHECK_SESSIONS_TIMEOUT)?;
@@ -914,9 +912,15 @@ impl NetworkServiceInner {
         }
 
         let self_id = self.metadata.id().clone();
-        let self_group_id = self.node_db.read().cluster_result.get(&self_id).unwrap().clone();
+        //let self_group_id = self.node_db.read().cluster_result.get(&self_id).unwrap().clone();
+        let self_group_id = match self.get_cluster_result(&self_id) {
+            Some(gid) => gid,
+            None => {
+                return;
+            }
+        };
 
-        debug!("connect cluster peers: self_id = {}", self_group_id);
+        debug!("connect cluster peers: self_id = {:?}", self_group_id);
         //let node_db = self.node_db.read();
 
         // 1. count the current sessions
@@ -1126,6 +1130,15 @@ impl NetworkServiceInner {
                 true, /* trusted_only */
             );
             debug!("Can't create connection: {:?}", e);
+        }
+    }
+
+    pub fn get_cluster_result(&self, id: &NodeId) -> Option<usize> {
+        let cluster_result = self.cluster_result.read();
+        if let Some(group_id) = cluster_result.get(id) {
+            Some(*group_id)
+        } else {
+            None
         }
     }
 
@@ -1846,9 +1859,13 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
             }
             COORDINATE_CLUSTER => {
                 let self_coord = self.vivaldi_model.read().get_coordinate().clone();
-                self.node_db.write().cluster_all_node(self.config.cluster_num, self.metadata.id().clone(), self_coord);
-                let mut cluster_result = self.cluster_result.write();
-                *cluster_result = self.node_db.read().get_cluster_result().clone();
+                {
+                    self.node_db.write().cluster_all_node(self.config.cluster_num, self.metadata.id().clone(), self_coord);
+                }
+                {
+                    let mut cluster_result = self.cluster_result.write();
+                    *cluster_result = self.node_db.read().get_cluster_result().clone();
+                }
                 self.connect_cluster_peers(io);
             }
             NODE_TABLE => {
@@ -2186,6 +2203,10 @@ impl<'a> NetworkContextTrait for NetworkContext<'a> {
     }
 
     fn self_node_id(&self) -> NodeId { *self.network_service.metadata.id() }
+
+    fn get_cluster_result(&self, id: &NodeId) -> Option<usize> {
+        self.network_service.get_cluster_result(id)
+    }
 
     /// Message is sent through this method.
     fn send(

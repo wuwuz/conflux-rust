@@ -327,6 +327,8 @@ pub trait NetworkContext {
     fn is_peer_self(&self, _node_id: &NodeId) -> bool;
 
     fn self_node_id(&self) -> NodeId;
+
+    fn get_cluster_result(&self, id: &NodeId) -> Option<usize>;
 }
 
 #[derive(Debug, Clone)]
