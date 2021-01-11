@@ -25,6 +25,15 @@ use std::{
     iter::FromIterator,
 };
 use throttling::time_window_bucket::TimeWindowBucket;
+use lazy_static::*;
+//use metrics::{register_meter_with_group, Meter};
+use metrics::{Gauge, GaugeUsize};
+use rand::Rng;
+
+lazy_static! {
+    static ref COORDINATE_ERROR_METER: Arc<dyn Gauge<usize>> =
+        GaugeUsize::register_with_group("coordinate_metric", "coordinate_error");
+}
 
 const COORDINATE_PROTOCOL_VERSION: u32 = 1;
 
@@ -188,16 +197,21 @@ impl CoordinateManager {
     fn ping(
         &mut self, uio: &UdpIoContext, node: &NodeEntry,
     ) -> Result<(), Error> {
-        let mut rlp = RlpStream::new_list(4);
+        let mut rlp = RlpStream::new_list(5);
         rlp.append(&COORDINATE_PROTOCOL_VERSION);
         self.public_endpoint.to_rlp_list(&mut rlp);
         node.endpoint.to_rlp_list(&mut rlp);
         //rlp.append(&expire_timestamp());
         rlp.append(&produce_timestamp());
+        let mut rng = rand::thread_rng();
+        let packet_random_num = rng.gen::<u32>();
+        rlp.append(&packet_random_num);
+
         let hash = self.send_packet(
             uio,
             PACKET_PING,
-            &node.endpoint.udp_address(),
+            //&node.endpoint.udp_address(),
+            node,
             &rlp.drain(),
         )?;
 
@@ -215,31 +229,35 @@ impl CoordinateManager {
     }
 
     fn send_packet(
-        &mut self, uio: &UdpIoContext, packet_id: u8, address: &SocketAddr,
+        &mut self, uio: &UdpIoContext, packet_id: u8, //address: &SocketAddr,
+        //address: &NodeEndpoint,
+        node: &NodeEntry,
         payload: &[u8],
     ) -> Result<H256, Error>
     {
         match packet_id {
             PACKET_PING => {
-                debug!("Sending Coordinate Ping Packet to {:?}", address);
+                debug!("Sending Coordinate Ping Packet to {:?}", node);
             }
             PACKET_PONG => {
-                debug!("Sending Coordinate Pong Packet to {:?}", address);
+                debug!("Sending Coordinate Pong Packet to {:?}", node);
             }
             _ => {
-                debug!("Error: Sending Unknown Packet to {:?}", address);
+                debug!("Error: Sending Unknown Packet to {:?}", node);
             }
         }
         let packet = assemble_packet(packet_id, payload, &self.secret)?;
         let hash = H256::from_slice(&packet[1..=32]);
-        self.send_to(uio, packet, address.clone());
+        self.send_to(uio, packet, node.clone());
         Ok(hash)
     }
 
     fn send_to(
-        &mut self, uio: &UdpIoContext, payload: Bytes, address: SocketAddr,
+        &mut self, uio: &UdpIoContext, payload: Bytes, //address: SocketAddr,
+        node: NodeEntry,
     ) {
-        uio.send(payload, address);
+        //uio.send(payload, address);
+        uio.send_with_latency(payload, node)
     }
 
     pub fn on_packet(
@@ -307,11 +325,12 @@ impl CoordinateManager {
 
         let ping_from = NodeEndpoint::from_rlp(&rlp.at(1)?)?;
         let ping_to = NodeEndpoint::from_rlp(&rlp.at(2)?)?;
-        //let timestamp: u64 = rlp.val_at(3)?;
+        let timestamp: u64 = rlp.val_at(3)?;
+        let packet_random_num: u32 = rlp.val_at(4)?;
         //self.check_timestamp(timestamp)?;
 
         // MODIFY: Add a new field here --- the node's coordinate
-        let mut response = RlpStream::new_list(4);
+        let mut response = RlpStream::new_list(5);
         let pong_to = NodeEndpoint {
             address: from.clone(),
             udp_port: ping_from.udp_port,
@@ -326,7 +345,8 @@ impl CoordinateManager {
         // pong_to.to_rlp_list(&mut response);
 
         response.append(&echo_hash);
-        response.append(&produce_timestamp());
+        //response.append(&produce_timestamp());
+        response.append(&timestamp);
 
         // Here: add the coordinate
         {
@@ -334,13 +354,15 @@ impl CoordinateManager {
             let coord = model.get_coordinate().clone();
             response.append(&coord);
         }
-        // Remove PONG
-        self.send_packet(uio, PACKET_PONG, from, &response.drain())?;
+        response.append(&packet_random_num);
 
+        // Remove PONG
         let entry = NodeEntry {
             id: node_id.clone(),
             endpoint: pong_to,
         };
+        self.send_packet(uio, PACKET_PONG, &entry, &response.drain())?;
+
         // TODO handle the error before sending pong
         if !entry.endpoint.is_valid() {
             debug!("Got bad address: {:?}", entry);
@@ -364,9 +386,14 @@ impl CoordinateManager {
         let echo_hash: H256 = rlp.val_at(1)?;
         let timestamp: u64 = rlp.val_at(2)?;
         let recv_coordinate: vivaldi::Coordinate<Dimension2> = rlp.val_at(3)?;
+        let packet_random_num: u32 = rlp.val_at(4)?;
         let mut rtt = produce_timestamp() - timestamp;
-
-
+        debug!("Recv Coordinate Pong from {:?}, random = {}, original_rtt={} ms", &from, &packet_random_num, &rtt);
+        if rtt == 0 {
+            debug!("Recv Coordinate Pong from {:?} 0ms!", &from);
+            rtt += 10;
+        }
+        /*
         // simulate a 3 cluster
         let self_group_id = self.id.to_low_u64_le() % 3;
         let opponent_group_id = node_id.to_low_u64_le() % 3;
@@ -381,6 +408,7 @@ impl CoordinateManager {
         }
 
         debug!("Recv Coordinate Pong from {:?} rtt {} ms", &from, &rtt);
+        */
 
         //self.check_timestamp(timestamp)?;
 
@@ -416,6 +444,7 @@ impl CoordinateManager {
                 let mut model = self.vivaldi_model.write();
                 model.observe(&recv_coordinate, Duration::from_millis(history.get_median()));
                 debug!("New Coord = {:?}", model.get_coordinate());
+                COORDINATE_ERROR_METER.update((model.get_coordinate().error() * 1000.0) as usize);
             }
             Ok(())
         } else {
@@ -546,7 +575,7 @@ fn produce_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs() as u64
+        .as_millis() as u64
 }
 
 fn assemble_packet(

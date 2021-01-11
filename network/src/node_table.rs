@@ -729,6 +729,10 @@ impl NodeTable {
         self.node_index.contains_key(id)
     }
 
+    pub fn node_cnt(&self) -> usize {
+        self.node_index.len()
+    }
+
     pub fn remove_with_id(&mut self, id: &NodeId) -> Option<Node> {
         let mut _index;
         if let Some(index) = self.node_index.get(id) {

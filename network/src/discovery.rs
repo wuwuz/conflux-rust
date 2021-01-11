@@ -471,6 +471,7 @@ impl Discovery {
             if !self.known_socket_addr.contains(&node.endpoint.address) {
                 debug!("Discovery: get a *new* socket addr {:?}", &node.endpoint.address);
                 self.known_socket_addr.insert(node.endpoint.address.clone());
+
             } else {
                 debug!("Discovery: get a known socket addr {:?}", &node.endpoint.address);
             }

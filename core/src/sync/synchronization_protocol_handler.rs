@@ -15,7 +15,7 @@ use crate::{
             handle_rlp_message, msgid, Context, DynamicCapability,
             GetBlockHeadersResponse, Heartbeat, NewBlockHashes, StatusV2,
             StatusV3, TransactionDigests, CoordinatePing, 
-            TestDelayModelMessage,
+            //TestDelayModelMessage,
         },
         node_type::NodeType,
         request_manager::{try_get_block_hashes, Request},
@@ -1273,6 +1273,7 @@ impl SynchronizationProtocolHandler {
         }
     }
 
+    /*
     fn produce_delay_test_msg(&self, seq_num: u32) -> TestDelayModelMessage {
         let size: usize = 10000;
         let mut load: Vec<u8> = vec![0; size];
@@ -1331,6 +1332,7 @@ impl SynchronizationProtocolHandler {
 
         Ok(())
     }
+    */
 
 
     fn produce_coordinate_ping(&self) -> CoordinatePing {
@@ -2319,7 +2321,7 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
     fn on_peer_connected_with_tag(
         &self, io: &dyn NetworkContext, peer: &NodeId,
         peer_protocol_version: ProtocolVersion,
-        peer_type: PeerLayerType,
+        _peer_type: PeerLayerType,
     ) {
         // 1. store the tag in some database
         //db.push(peer, peer_type);

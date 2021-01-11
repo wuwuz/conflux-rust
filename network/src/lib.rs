@@ -31,6 +31,9 @@ extern crate strum;
 extern crate strum_macros;
 extern crate cfxkey as keylib;
 extern crate keccak_hash;
+extern crate crossbeam;
+#[macro_use] 
+extern crate scan_fmt;
 
 pub const PROTOCOL_ID_SIZE: usize = 3;
 pub type ProtocolId = [u8; PROTOCOL_ID_SIZE];
@@ -153,6 +156,10 @@ pub struct NetworkConfiguration {
     pub cluster_num: usize,
     pub fast_peer_local_group: usize,
     pub first_hop_peers: usize,
+
+    // test mode, adding latencies by coordinate and node id
+    pub node_id_file: Option<String>,
+    pub coordinate_file: Option<String>,
 }
 
 impl NetworkConfiguration {
@@ -190,6 +197,8 @@ impl NetworkConfiguration {
             cluster_num: 1,
             fast_peer_local_group: 0,
             first_hop_peers: 0,
+            node_id_file: None,
+            coordinate_file: None,
         }
     }
 

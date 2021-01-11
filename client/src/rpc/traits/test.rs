@@ -52,6 +52,9 @@ pub trait TestRpc {
     #[rpc(name = "addlatency")]
     fn add_latency(&self, id: NodeId, latency_ms: f64) -> RpcResult<()>;
 
+    #[rpc(name = "addlatencybycoordinate")]
+    fn add_latency_by_coordinate(&self, self_index: usize, total_node: usize) -> RpcResult<()>;
+
     #[rpc(name = "generateoneblock")]
     fn generate_one_block(
         &self, num_txs: usize, block_size_limit: usize,

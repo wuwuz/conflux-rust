@@ -9,8 +9,9 @@ from test_framework.util import wait_until
 
 class AutoDiscovery(ConfluxTestFramework):
     def set_test_params(self):
-        self.num_nodes = 2
+        self.num_nodes = 20
         self.conf_parameters = {
+            "max_outgoing_peers": "100",
             "discovery_fast_refresh_timeout_ms": "200",
             "discovery_round_timeout_ms": "100",
             "discovery_housekeeping_timeout_ms": "200",

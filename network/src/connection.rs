@@ -6,7 +6,7 @@ use crate::{
     io::{IoContext, StreamToken},
     throttling::THROTTLING_SERVICE,
     Error, ErrorKind,
-    check_delay_test,
+    //check_delay_test,
 };
 use bytes::{Bytes, BytesMut};
 use lazy_static::lazy_static;

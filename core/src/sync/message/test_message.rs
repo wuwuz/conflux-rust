@@ -18,7 +18,7 @@ pub struct TestDelayModelMessage {
 }
 
 impl Handleable for TestDelayModelMessage {
-    fn handle(self, ctx: &Context) -> Result<(), Error> {
+    fn handle(self, _ctx: &Context) -> Result<(), Error> {
         //debug!("DelayTest: Receive package from {}", ctx.node_id());
         //debug!("DelayTest: Sequence Number = {}, time = {:?}", self.seq_num, Instant::now());
         Ok(())

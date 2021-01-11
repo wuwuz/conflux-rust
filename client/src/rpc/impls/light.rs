@@ -589,6 +589,7 @@ impl TestRpc for TestRpcImpl {
     delegate! {
         to self.common {
             fn add_latency(&self, id: NodeId, latency_ms: f64) -> RpcResult<()>;
+            fn add_latency_by_coordinate(&self, self_index: usize, total_node: usize) -> RpcResult<()>;
             fn add_peer(&self, node_id: NodeId, address: SocketAddr) -> RpcResult<()>;
             fn chain(&self) -> RpcResult<Vec<RpcBlock>>;
             fn drop_peer(&self, node_id: NodeId, address: SocketAddr) -> RpcResult<()>;

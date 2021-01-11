@@ -8,16 +8,32 @@ use crate::{
     IpFilter,
 };
 use io::StreamToken;
-use std::{collections::{HashSet, HashMap}, net::IpAddr, time::Duration, cmp::min};
+use std::{collections::{HashSet, HashMap}, net::IpAddr, time::Duration, cmp::min, sync::Arc};
 use vivaldi::{
     vector::Dimension2, vector::Vector,
 };
 use rand::prelude::*;
 use rand::distributions::WeightedIndex;
+use lazy_static::*;
+use metrics::{register_meter_with_group, Meter};
+use metrics::{Gauge, GaugeUsize};
+
+lazy_static! {
+    //static ref KNOWN_NODE_METER: Arc<dyn Meter> =
+    //    register_meter_with_group("coordinate_metric", "known_node_cnt");
+    static ref EVICT_NODE_METER: Arc<dyn Meter> =
+        register_meter_with_group("coordinate_metric", "evict_node_cnt");
+    static ref KNOWN_COORDINATE_METER: Arc<dyn Meter> =
+        register_meter_with_group("coordinate_metric", "known_coordinate_cnt");
+    static ref KNOWN_NODE_METER: Arc<dyn Gauge<usize>> =
+        GaugeUsize::register_with_group("coordinate_metric", "konwn_node_cnt");
+}
 
 const TRUSTED_NODES_FILE: &str = "trusted_nodes.json";
 const UNTRUSTED_NODES_FILE: &str = "untrusted_nodes.json";
 const BLACKLISTED_NODES_FILE: &str = "blacklisted_nodes.json";
+
+const MAX_ACCEPT_ERROR: f64 = 0.4;
 
 //pub const MAX_CLUSTER_NUM: usize = 3; // 8
 
@@ -153,6 +169,7 @@ impl NodeDatabase {
     pub fn insert_with_token(
         &mut self, entry: NodeEntry, stream_token: StreamToken,
     ) {
+        KNOWN_NODE_METER.update(self.trusted_nodes.node_cnt());
         if self.evaluate_blacklisted(&entry.id) {
             return;
         }
@@ -198,6 +215,7 @@ impl NodeDatabase {
 
         if let Some(id) = &evictee {
             self.remove(id);
+            EVICT_NODE_METER.mark(1);
         }
 
         self.ip_limit.insert(id, ip, trusted, evictee)
@@ -207,6 +225,8 @@ impl NodeDatabase {
     /// node with the specified `entry`, and promote the node to trusted if it
     /// is untrusted.
     pub fn insert_with_conditional_promotion(&mut self, entry: NodeEntry) {
+        KNOWN_NODE_METER.update(self.trusted_nodes.node_cnt());
+        debug!("known node = {:?}", self.trusted_nodes.node_cnt());
         if self.evaluate_blacklisted(&entry.id) {
             return;
         }
@@ -372,7 +392,7 @@ impl NodeDatabase {
                 entries.push(NodeEntry {
                     id,
                     endpoint: node.endpoint.clone(),
-                });
+                })
             }
         }
 
@@ -442,6 +462,7 @@ impl NodeDatabase {
         if map.contains_key(&id) == false {
             map.insert(id, coord.clone());
             debug!("Inserting ID = {:?} Coord = {:?}", id, coord);
+            KNOWN_COORDINATE_METER.mark(1);
         } else {
             debug!("Updating ID = {:?} Coord = {:?}", id, coord);
             if let Some(x) = map.get_mut(&id) {
@@ -474,10 +495,17 @@ impl NodeDatabase {
         debug!("cluster group num = {}", k);
         self.update_node_coordinate(self_id, &self_coord);
 
+        let mut accept_coord = HashMap::new();
+        for (id, coord) in self.node_coordinate.iter() {
+            if coord.error() < MAX_ACCEPT_ERROR {
+                accept_coord.insert(id.clone(), coord.clone());
+            }
+        }
+
         // at most 8 clustering!
         let (cluster_result, centers) = 
         //(self.cluster_result, self.centers) = 
-            self.cluster(&self.node_coordinate, k);
+            self.cluster(&accept_coord, k);
         self.cluster_result = cluster_result;
         self.centers = centers;
 
@@ -513,6 +541,11 @@ impl NodeDatabase {
         let max_round = 10;
         let mut results: HashMap<NodeId, usize> = HashMap::new();
         let mut centers = Vec::new();
+
+        if coordinate.len() == 0 {
+            return (results, centers);
+        }
+
         let mut node_array = Vec::new();
         let mut rng = thread_rng();
 

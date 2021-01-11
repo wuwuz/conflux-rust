@@ -37,13 +37,18 @@ use std::{
     cmp::{min, Ordering},
     collections::{BinaryHeap, HashMap, HashSet, VecDeque},
     fs,
-    io::{self, Read, Write},
+    io::{self, Read, Write,  BufRead},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::{Path, PathBuf},
     str::FromStr,
     sync::{atomic::Ordering as AtomicOrdering, Arc},
     time::{Duration, Instant},
+    thread,
 };
+use crossbeam;
+//#[macro_use] extern crate scan_fmt;
+//#[macro_use]
+use scan_fmt;
 
 const MAX_SESSIONS: usize = 2048;
 
@@ -121,28 +126,55 @@ pub const UDP_PROTOCOL_COORDINATE: u8 = 2;
 pub struct Datagram {
     pub payload: Bytes,
     pub address: SocketAddr,
+    pub insert_time: Instant,
 }
 
 pub struct UdpChannel {
     pub send_queue: VecDeque<Datagram>,
+    pub latencies: RwLock<HashMap<NodeId, f64>>,
 }
 
 impl UdpChannel {
     pub fn new() -> UdpChannel {
         UdpChannel {
             send_queue: VecDeque::new(),
+            latencies: RwLock::new(HashMap::new()),
         }
     }
 
     pub fn any_sends_queued(&self) -> bool { !self.send_queue.is_empty() }
 
     pub fn dequeue_send(&mut self) -> Option<Datagram> {
+        debug!("Test UDP: deque");
         self.send_queue.pop_front()
     }
 
     pub fn requeue_send(&mut self, datagram: Datagram) {
         self.send_queue.push_front(datagram)
     }
+
+    pub fn get_latency(&self, peer: &NodeId) -> Option<f64> {
+        match self.latencies.read().get(peer) {
+            Some(i) => Some(i.clone()),
+            None => None,
+        }
+    }
+
+    pub fn add_latency(&mut self, peer: &NodeId, latency_ms: f64) {
+        debug!("UDP Add latency: peer = {:?}, latency = {:?}", peer, latency_ms);
+        self.latencies.write().insert(peer.clone(), latency_ms);
+    }
+
+    /*
+    // push data into the queue
+    pub fn send(&mut self, payload: Bytes, address: SocketAddr) {
+        self.send_queue
+            .push_back(Datagram { payload, address });
+    }
+
+    pub fn send_with_latency(&mut self, payload: Bytes, address: SocketAddr, latency: f64) {
+    }
+    */
 }
 
 pub struct UdpIoContext<'a> {
@@ -160,12 +192,95 @@ impl<'a> UdpIoContext<'a> {
     }
 
     pub fn send(&self, payload: Bytes, address: SocketAddr) {
+        let insert_time = Instant::now();
+        self.channel
+            .write()
+            .send_queue
+            .push_back(Datagram { payload, address, insert_time});
+    }
+
+    pub fn send_with_latency(&self, payload: Bytes, node: NodeEntry) {
+        let latency = match self.channel.read().get_latency(&node.id) {
+            Some(l) => l.clone(),
+            None => 0.0,
+        };
+        debug!("Test UDP: latency={}", latency);
+        crossbeam::scope(|scope| {
+                scope.spawn(|_| {
+                    debug!("Test UDP: begin sleep");
+                    thread::sleep(Duration::from_millis(latency as u64));
+                    debug!("Test UDP: end sleep, start sending");
+                    let insert_time = Instant::now();
+                    self.channel
+                        .write()
+                        .send_queue
+                        .push_back(Datagram { payload, address: node.endpoint.address, insert_time});
+                });
+            }
+        ).unwrap();
+        /*
+        let handle = thread::spawn(|| {
+            thread::sleep(Duration::from_millis(latency as u64));
+            //debug!("payload = {:?}", payload);
+            self.channel
+                .write()
+                .send_queue
+                .push_back(Datagram { payload, address: node.endpoint.address });
+        });
+        handle.join().unwrap();
+        */
+    }
+}
+/*
+pub struct UdpIoContext {
+    pub channel: Arc<RwLock<UdpChannel>>,
+    pub node_db: Arc<RwLock<NodeDatabase>>,
+    pub vivaldi_model: Arc<RwLock<vivaldi::Model<Dimension2>>>,
+}
+
+impl UdpIoContext {
+    pub fn new(
+        channel: Arc<RwLock<UdpChannel>>, node_db: Arc<RwLock<NodeDatabase>>,
+        vivaldi_model: Arc<RwLock<vivaldi::Model<Dimension2>>>
+    ) -> UdpIoContext {
+        UdpIoContext { channel, node_db, vivaldi_model }
+    }
+
+    pub fn send(&self, payload: Bytes, address: SocketAddr) {
         self.channel
             .write()
             .send_queue
             .push_back(Datagram { payload, address });
     }
+
+    pub fn send_with_latency(&self, payload: Bytes, node: NodeEntry) {
+        let latency = match self.channel.read().get_latency(&node.id) {
+            Some(l) => l.clone(),
+            None => 0.0,
+        };
+        /*
+        let handle = thread::spawn(|| {
+            thread::sleep(Duration::from_millis(latency as u64));
+            //debug!("payload = {:?}", payload);
+            /*
+            self.channel
+                .write()
+                .send_queue
+                .push_back(Datagram { payload, address: node.endpoint.address });
+                */
+        });
+        */
+        crossbeam::scope(|scope| {
+                thread::sleep(Duration::from_millis(latency as u64));
+                self.channel
+                    .write()
+                    .send_queue
+                    .push_back(Datagram { payload, address: node.endpoint.address });
+            }
+        );
+    }
 }
+*/
 
 /// NetworkService implements the P2P communication between different nodes. It
 /// manages connections between peers, including accepting new peers or dropping
@@ -360,6 +475,16 @@ impl NetworkService {
     ) -> Result<(), Error> {
         if let Some(ref inner) = self.inner {
             inner.add_latency(id, latency_ms)
+        } else {
+            Err("Network service not started yet!".into())
+        }
+    }
+
+    pub fn add_latency_by_coordinate(
+        &self, self_index: usize, total_node: usize
+    ) -> Result<(), Error> {
+        if let Some(ref inner) = self.inner {
+            inner.add_latency_by_coordinate(self_index, total_node)
         } else {
             Err("Network service not started yet!".into())
         }
@@ -696,13 +821,92 @@ impl NetworkServiceInner {
                 let mut latencies = queue.latencies.write();
                 latencies
                     .insert(peer, Duration::from_millis(latency_ms as u64));
-                Ok(())
             }
-            None => Err(
+            None => { 
+                return Err(
                 "conflux not in test mode, and does not support add_latency"
                     .into(),
-            ),
+                );
+            }
         }
+
+        self.udp_channel.write().add_latency(&peer, latency_ms);
+        Ok(())
+    }
+
+    pub fn add_latency_by_coordinate(
+        &self, self_index: usize, total_node: usize,
+    ) -> Result<(), Error> {
+        debug!("add latency: start");
+        let mut all_node_id = Vec::new();
+        match &self.config.node_id_file {
+            Some(f) => {
+                let mut cnt = 0;
+                //let mut file = File::open(f)?;
+                let lines = read_lines(f)?;
+                for line in lines {
+                    if cnt == total_node {
+                        break;
+                    }
+                    if let Ok(s) = line {
+                        let s = s.trim_start_matches("0x");
+                        let id = s.parse::<NodeId>().expect("cannot parse to nodeid");
+                        debug!("add latency: get id = {:?}", &id);
+                        all_node_id.push(id);
+                        cnt += 1;
+                    }
+                }
+            }
+            None => {
+                return Err(
+                    "Node id file cannot be opened"
+                    .into(),
+                );
+            }
+        };
+
+        let mut all_coordinate = Vec::new();
+        match &self.config.coordinate_file {
+            Some(f) => {
+                let mut cnt = 0;
+                //let mut file = File::open(f)?;
+                let lines = read_lines(f)?;
+                for line in lines {
+                    if cnt == total_node {
+                        break;
+                    }
+                    if let Ok(s) = line {
+                        //let id = s.parse::<NodeId>().expect("cannot parse to nodeid");
+                        if let Ok((lat, lon)) = scan_fmt!(&s, "{f} {f}", f64, f64) {
+                            let coord = 
+                                LatLonCoordinate {
+                                    lat, lon
+                                };
+                            cnt += 1;
+                            debug!("add latency: get coord = {:?}", &coord);
+                            all_coordinate.push(coord);
+                        }
+                    }
+                }
+            }
+            None => {
+                return Err(
+                    "Coordinate file cannot be opened"
+                    .into(),
+                );
+            }
+        };
+
+        let self_coord = &all_coordinate[self_index];
+        for i in 0..total_node {
+            if i != self_index {
+                let dist_ms = self_coord.distance_to_ms(&all_coordinate[i]);
+                debug!("add latency: id = {:?}, latency = {:?}", all_node_id[i], dist_ms);
+                self.add_latency(all_node_id[i], dist_ms)?;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn get_ip_filter(&self) -> &IpFilter { &self.config.ip_filter }
@@ -1611,7 +1815,10 @@ impl NetworkServiceInner {
         let mut udp_channel = self.udp_channel.write();
         while let Some(data) = udp_channel.dequeue_send() {
             match udp_socket.send_to(&data.payload, &data.address) {
-                Ok(Some(size)) if size == data.payload.len() => {}
+                Ok(Some(size)) if size == data.payload.len() => {
+                    let elapsed_time = data.insert_time.elapsed().as_millis();
+                    debug!("Test UDP: successfully send udp, waiting for {:?} ms", elapsed_time);
+                }
                 Ok(Some(_)) => {
                     warn!("UDP sent incomplete datagram");
                 }
@@ -1798,7 +2005,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                     d.round(&UdpIoContext::new(
                         &self.udp_channel,
                         &self.node_db,
-                        &self.vivaldi_model
+                        &self.vivaldi_model,
                     ))
                 }
 
@@ -2388,5 +2595,36 @@ impl Encodable for ProtocolVersion {
 impl Decodable for ProtocolVersion {
     fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
         Ok(Self(rlp.as_val()?))
+    }
+}
+
+fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<fs::File>>>
+where P: AsRef<Path>, {
+    let file = fs::File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
+
+#[derive(Debug)]
+struct LatLonCoordinate {
+    lat: f64, 
+    lon: f64,
+}
+
+impl LatLonCoordinate {
+    pub fn distance_to_ms(&self, other: &LatLonCoordinate) -> f64 {
+        let earth_radius_kilometer = 6371.0_f64;
+        let lon_a = self.lat.to_radians();
+        let lat_a = self.lon.to_radians();
+        let lon_b = other.lat.to_radians();
+        let lat_b = other.lon.to_radians();
+
+        if (lon_a - lon_b).abs() < 0.1 && (lat_a - lat_b).abs() < 0.1 {
+            0.0
+        } else {
+            let c = lat_a.cos() * lat_b.cos() * (lon_a - lon_b).cos() + 
+                        lat_a.sin() * lat_b.sin();
+            let dist = c.acos() * earth_radius_kilometer / 100000.0;
+            dist * 1000.0
+        }
     }
 }

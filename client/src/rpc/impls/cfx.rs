@@ -1044,6 +1044,7 @@ impl TestRpc for TestRpcImpl {
     delegate! {
         to self.common {
             fn add_latency(&self, id: NodeId, latency_ms: f64) -> JsonRpcResult<()>;
+            fn add_latency_by_coordinate(&self, self_index: usize, total_node: usize) -> JsonRpcResult<()>;
             fn add_peer(&self, node_id: NodeId, address: SocketAddr) -> JsonRpcResult<()>;
             fn chain(&self) -> JsonRpcResult<Vec<RpcBlock>>;
             fn drop_peer(&self, node_id: NodeId, address: SocketAddr) -> JsonRpcResult<()>;

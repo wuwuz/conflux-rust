@@ -572,8 +572,8 @@ def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, t
     It first lets all the nodes link as a loop, then randomly pick 'sample-1'
     outgoing peers for each node.    
     """
-    latency_max = 50
-    latency_min = 50
+    latency_max = 200
+    latency_min = 20
     peer = [[] for _ in nodes]
     latencies = [{} for _ in nodes]
     threads = []
@@ -586,8 +586,8 @@ def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, t
         peer[i].append(next)
         lat = random.randint(latency_min, latency_max)
         #print("latency of ", i, next, "=", lat)
-        latencies[i][next] = lat
-        latencies[next][i] = lat
+        latencies[i][next] = latency_max
+        latencies[next][i] = latency_max
 
         for _ in range(sample - 1):
             while True:
@@ -596,6 +596,10 @@ def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, t
                     peer[i].append(p)
                     lat = random.randint(latency_min, latency_max)
                     #print("latency of ", i, p, "=", lat)
+                    if i % 3 == p % 3:
+                        lat = latency_min
+                    else:
+                        lat = latency_max
                     latencies[i][p] = lat
                     latencies[p][i] = lat
                     break
@@ -614,6 +618,16 @@ def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, t
         t.join(timeout)
         assert not t.is_alive(), "Node[{}] connect to other nodes timeout in {} seconds".format(t.a, timeout)
         assert not t.failed, "connect_sample_nodes failed."
+
+def write_node_id_file(nodes, filename):
+    try:
+        f = open(filename, "w")
+        print("successfully open node id file")
+    except:
+        print("cannot open file", filename)
+
+    for node in nodes:
+        print(node.key, file = f)
 
 
 def assert_blocks_valid(nodes, blocks):
@@ -638,11 +652,13 @@ class ConnectThread(threading.Thread):
     def run(self):
         try:
             while True:
+                self.nodes[self.a].addlatencybycoordinate(self.a, len(self.nodes))
                 for i in range(len(self.peers)):
                     p = self.peers[i]
                     connect_nodes(self.nodes, self.a, p)
-                for p in self.latencies[self.a]:
-                    self.nodes[self.a].addlatency(self.nodes[p].key, self.latencies[self.a][p])
+                #for i in range(len(self.peers))
+                #for p in self.latencies[self.a]:
+                #    self.nodes[self.a].addlatency(self.nodes[p].key, self.latencies[self.a][p])
                 if len(self.nodes[self.a].getpeerinfo()) >= self.min_peers:
                     break
                 else:

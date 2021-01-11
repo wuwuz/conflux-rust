@@ -184,6 +184,10 @@ build_config! {
         (transaction_request_timeout_ms, (u64), 30_000)
         (tx_maintained_for_peer_timeout_ms, (u64), 600_000)
 
+        //only for testing
+        (node_id_file, (Option<String>), None)
+        (coordinate_file, (Option<String>), None)
+
         // Peer management section.
         (bootnodes, (Option<String>), None)
         (discovery_fast_refresh_timeout_ms, (u64), 10_000)
@@ -382,6 +386,11 @@ impl Configuration {
             self.raw_conf.fast_peer_local_group;
         network_config.first_hop_peers = 
             self.raw_conf.first_hop_peers;
+
+        network_config.node_id_file = 
+            self.raw_conf.node_id_file.clone();
+        network_config.coordinate_file = 
+            self.raw_conf.coordinate_file.clone();
 
         Ok(network_config)
     }

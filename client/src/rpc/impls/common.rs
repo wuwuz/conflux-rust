@@ -267,6 +267,13 @@ impl RpcImpl {
         }
     }
 
+    pub fn add_latency_by_coordinate(&self, self_index: usize, total_node: usize) -> RpcResult<()> {
+        match self.network.add_latency_by_coordinate(self_index, total_node) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(RpcError::internal_error()),
+        }
+    }
+
     pub fn add_peer(
         &self, node_id: NodeId, address: SocketAddr,
     ) -> RpcResult<()> {
