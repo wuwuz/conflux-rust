@@ -205,19 +205,28 @@ impl<'a> UdpIoContext<'a> {
             None => 0.0,
         };
         debug!("Test UDP: latency={}", latency);
+        /*
         crossbeam::scope(|scope| {
                 scope.spawn(|_| {
                     debug!("Test UDP: begin sleep");
-                    thread::sleep(Duration::from_millis(latency as u64));
+                    //thread::sleep(Duration::from_millis(latency as u64));
                     debug!("Test UDP: end sleep, start sending");
                     let insert_time = Instant::now();
                     self.channel
                         .write()
                         .send_queue
                         .push_back(Datagram { payload, address: node.endpoint.address, insert_time});
+
                 });
             }
         ).unwrap();
+        */
+        let insert_time = Instant::now();
+        self.channel
+            .write()
+            .send_queue
+            .push_back(Datagram { payload, address: node.endpoint.address, insert_time});
+
         /*
         let handle = thread::spawn(|| {
             thread::sleep(Duration::from_millis(latency as u64));

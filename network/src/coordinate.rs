@@ -328,6 +328,8 @@ impl CoordinateManager {
         let timestamp: u64 = rlp.val_at(3)?;
         let packet_random_num: u32 = rlp.val_at(4)?;
         //self.check_timestamp(timestamp)?;
+        let elapsed = produce_timestamp() - timestamp;
+        debug!("Coordinate: receive ping from {:?}, random = {}, time = {} ms", &from, packet_random_num, elapsed);
 
         // MODIFY: Add a new field here --- the node's coordinate
         let mut response = RlpStream::new_list(5);
@@ -388,9 +390,9 @@ impl CoordinateManager {
         let recv_coordinate: vivaldi::Coordinate<Dimension2> = rlp.val_at(3)?;
         let packet_random_num: u32 = rlp.val_at(4)?;
         let mut rtt = produce_timestamp() - timestamp;
-        debug!("Recv Coordinate Pong from {:?}, random = {}, original_rtt={} ms", &from, &packet_random_num, &rtt);
+        debug!("Coordinate: receive Coordinate Pong from {:?}, random = {}, original_rtt={} ms", &from, &packet_random_num, &rtt);
         if rtt == 0 {
-            debug!("Recv Coordinate Pong from {:?} 0ms!", &from);
+            debug!("Coordinate: receive Coordinate Pong from {:?} 0ms!", &from);
             rtt += 10;
         }
         /*
@@ -442,8 +444,10 @@ impl CoordinateManager {
                 history.observe(rtt);
                 //debug!("history = {:?}", history);
                 let mut model = self.vivaldi_model.write();
+                let med = history.get_median();
+                debug!("Coordinate: the median is {}", med);
                 model.observe(&recv_coordinate, Duration::from_millis(history.get_median()));
-                debug!("New Coord = {:?}", model.get_coordinate());
+                debug!("Coordinate: new Coord = {:?}", model.get_coordinate());
                 COORDINATE_ERROR_METER.update((model.get_coordinate().error() * 1000.0) as usize);
             }
             Ok(())
