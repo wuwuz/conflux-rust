@@ -1158,6 +1158,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "delay-queue"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4feac4ffcbc741236ab6ec6dc898c6889ac8b54c6a3378a9e81de233e12a8a9"
+
+[[package]]
 name = "delegate"
 version = "0.4.2"
 dependencies = [
@@ -2647,6 +2653,7 @@ dependencies = [
  "cfx-types",
  "cfxkey",
  "crossbeam",
+ "delay-queue",
  "enum-map",
  "enum-map-derive",
  "error-chain",
@@ -4673,6 +4680,7 @@ checksum = "b5a972e5669d67ba988ce3dc826706fb0a8b01471c088cb0b6110b805cc36aed"
 name = "vivaldi"
 version = "0.1.0"
 dependencies = [
+ "log 0.4.11",
  "malloc_size_of",
  "malloc_size_of_derive",
  "rand 0.7.3",

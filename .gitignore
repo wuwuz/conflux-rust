@@ -16,3 +16,4 @@ build/
 *~
 **/storage_db/
 genesis*
+node_id.txt

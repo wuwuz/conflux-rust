@@ -40,3 +40,4 @@ malloc_size_of_derive = {path = "../util/malloc_size_of_derive"}
 vivaldi = { path = "../vivaldi" }
 crossbeam = "0.8"
 scan_fmt = "0.2.5"
+delay-queue="0.2.0"

@@ -54,6 +54,9 @@
 #![deny(missing_docs)]
 #![warn(missing_debug_implementations, rust_2018_idioms, unreachable_pub)]
 
+#[macro_use]
+extern crate log;
+
 mod coordinate;
 mod model;
 

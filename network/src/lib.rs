@@ -84,6 +84,8 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+//use cfx_bytes::Bytes;
+//use node_table::NodeEntry;
 use malloc_size_of_derive::MallocSizeOf as DeriveMallocSizeOf;
 
 pub const NODE_TAG_NODE_TYPE: &str = "node_type";
@@ -309,6 +311,8 @@ pub trait NetworkContext {
         min_protocol_version: ProtocolVersion,
         version_valid_till: ProtocolVersion, priority: SendQueuePriority,
     ) -> Result<(), Error>;
+
+    //fn udp_send_with_latency(&self, payload: Bytes, node: NodeEntry) -> Result<(), Error>;
 
     /*
     fn send_with_special_flag(

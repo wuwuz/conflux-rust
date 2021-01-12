@@ -49,6 +49,7 @@ use crossbeam;
 //#[macro_use] extern crate scan_fmt;
 //#[macro_use]
 use scan_fmt;
+use delay_queue::{Delay, DelayQueue};
 
 const MAX_SESSIONS: usize = 2048;
 
@@ -71,6 +72,7 @@ const STOP_NET_POLL: TimerToken = HANDLER_TIMER + 1;
 const COORDINATE_UPDATE: TimerToken = SYS_TIMER + 10;
 const COORDINATE_REFRESH: TimerToken = SYS_TIMER + 11;
 const COORDINATE_CLUSTER: TimerToken = SYS_TIMER + 12;
+const SEND_DELAYED_UDP: TimerToken = SYS_TIMER + 13;
 
 pub const DEFAULT_HOUSEKEEPING_TIMEOUT: Duration = Duration::from_secs(2);
 // for DISCOVERY_REFRESH TimerToken
@@ -130,27 +132,30 @@ pub struct Datagram {
 }
 
 pub struct UdpChannel {
-    pub send_queue: VecDeque<Datagram>,
+    pub send_queue: Arc<RwLock<VecDeque<Datagram>>>,
     pub latencies: RwLock<HashMap<NodeId, f64>>,
+    //pub delay_queue: Arc<RwLock<DelayQueue<Delay<Datagram>>>>,
 }
 
 impl UdpChannel {
     pub fn new() -> UdpChannel {
+        //let delay_queue = Arc::new(RwLock::new(DelayQueue::new()));
         UdpChannel {
-            send_queue: VecDeque::new(),
+            send_queue: Arc::new(RwLock::new(VecDeque::new())),
             latencies: RwLock::new(HashMap::new()),
+            //delay_queue,
         }
     }
 
-    pub fn any_sends_queued(&self) -> bool { !self.send_queue.is_empty() }
+    pub fn any_sends_queued(&self) -> bool { !self.send_queue.read().is_empty() }
 
-    pub fn dequeue_send(&mut self) -> Option<Datagram> {
+    pub fn dequeue_send(&self) -> Option<Datagram> {
         debug!("Test UDP: deque");
-        self.send_queue.pop_front()
+        self.send_queue.write().pop_front()
     }
 
-    pub fn requeue_send(&mut self, datagram: Datagram) {
-        self.send_queue.push_front(datagram)
+    pub fn requeue_send(&self, datagram: Datagram) {
+        self.send_queue.write().push_front(datagram)
     }
 
     pub fn get_latency(&self, peer: &NodeId) -> Option<f64> {
@@ -160,137 +165,97 @@ impl UdpChannel {
         }
     }
 
-    pub fn add_latency(&mut self, peer: &NodeId, latency_ms: f64) {
+    pub fn add_latency(&self, peer: &NodeId, latency_ms: f64) {
         debug!("UDP Add latency: peer = {:?}, latency = {:?}", peer, latency_ms);
         self.latencies.write().insert(peer.clone(), latency_ms);
     }
 
-    /*
     // push data into the queue
-    pub fn send(&mut self, payload: Bytes, address: SocketAddr) {
-        self.send_queue
-            .push_back(Datagram { payload, address });
+    pub fn send(&self, data: Datagram) {
+        self.send_queue.write() 
+            .push_back(data);
     }
 
-    pub fn send_with_latency(&mut self, payload: Bytes, address: SocketAddr, latency: f64) {
+    /*
+    pub fn send_with_latency(&self, data: Datagram, latency: Duration) {
+        //self.delay_queue.push(Delay::for_duration(data, latency));
+        self.send(data);
     }
     */
 }
 
 pub struct UdpIoContext<'a> {
-    pub channel: &'a RwLock<UdpChannel>,
+    pub channel: &'a UdpChannel,
     pub node_db: &'a RwLock<NodeDatabase>,
     pub vivaldi_model: &'a Arc<RwLock<vivaldi::Model<Dimension2>>>,
+
+    pub io: Option<&'a IoContext<NetworkIoMessage>>,
+    pub network_service: &'a NetworkServiceInner,
 }
 
 impl<'a> UdpIoContext<'a> {
     pub fn new(
-        channel: &'a RwLock<UdpChannel>, node_db: &'a RwLock<NodeDatabase>,
-        vivaldi_model: &'a Arc<RwLock<vivaldi::Model<Dimension2>>>
+        channel: &'a UdpChannel, node_db: &'a RwLock<NodeDatabase>,
+        vivaldi_model: &'a Arc<RwLock<vivaldi::Model<Dimension2>>>,
+
+        io: Option<&'a IoContext<NetworkIoMessage>>,
+        network_service: &'a NetworkServiceInner,
     ) -> UdpIoContext<'a> {
-        UdpIoContext { channel, node_db, vivaldi_model }
+        UdpIoContext { channel, node_db, vivaldi_model, io, network_service }
     }
 
     pub fn send(&self, payload: Bytes, address: SocketAddr) {
         let insert_time = Instant::now();
         self.channel
-            .write()
-            .send_queue
-            .push_back(Datagram { payload, address, insert_time});
+            .send(Datagram { payload, address, insert_time});
     }
 
-    pub fn send_with_latency(&self, payload: Bytes, node: NodeEntry) {
-        let latency = match self.channel.read().get_latency(&node.id) {
-            Some(l) => l.clone(),
-            None => 0.0,
+    pub fn send_with_latency(&self, payload: Bytes, node: NodeEntry) -> Result<(), Error> {
+        let latency = match &self.network_service.udp_delayed_queue {
+            Some(q) => {
+                q.latencies.read().get(&node.id).copied()
+            }
+            None => None, 
         };
-        debug!("Test UDP: latency={}", latency);
-        /*
-        crossbeam::scope(|scope| {
-                scope.spawn(|_| {
-                    debug!("Test UDP: begin sleep");
-                    //thread::sleep(Duration::from_millis(latency as u64));
-                    debug!("Test UDP: end sleep, start sending");
-                    let insert_time = Instant::now();
-                    self.channel
-                        .write()
-                        .send_queue
-                        .push_back(Datagram { payload, address: node.endpoint.address, insert_time});
 
+        match latency {
+            Some(l) => {
+                let now = Instant::now();
+                let ts_to_send = now + l;
+                debug!("test udp: sending packet with latency {:?} ms, insert delay queue", l.as_millis());
+                let q =
+                    self.network_service.udp_delayed_queue.as_ref().unwrap();
+                let mut queue = q.queue.lock();
+                queue.push(DelayedDatagram::new(
+                    ts_to_send, 
+                    Datagram {
+                        payload,
+                        address: node.endpoint.address,
+                        insert_time: now,
+                    }),
+                );
+                if self.io.is_none() {
+                    return Err("no io context".into());
+                }
+                let io = self.io.unwrap();
+                io.register_timer_once_nocancel(
+                    SEND_DELAYED_UDP,
+                    l,
+                )?;
+            }
+            None => {
+                let now = Instant::now();
+                self.network_service.udp_channel.send(Datagram{
+                    payload,
+                    address: node.endpoint.address,
+                    insert_time: now,
                 });
             }
-        ).unwrap();
-        */
-        let insert_time = Instant::now();
-        self.channel
-            .write()
-            .send_queue
-            .push_back(Datagram { payload, address: node.endpoint.address, insert_time});
+        }
 
-        /*
-        let handle = thread::spawn(|| {
-            thread::sleep(Duration::from_millis(latency as u64));
-            //debug!("payload = {:?}", payload);
-            self.channel
-                .write()
-                .send_queue
-                .push_back(Datagram { payload, address: node.endpoint.address });
-        });
-        handle.join().unwrap();
-        */
+        Ok(())
     }
 }
-/*
-pub struct UdpIoContext {
-    pub channel: Arc<RwLock<UdpChannel>>,
-    pub node_db: Arc<RwLock<NodeDatabase>>,
-    pub vivaldi_model: Arc<RwLock<vivaldi::Model<Dimension2>>>,
-}
-
-impl UdpIoContext {
-    pub fn new(
-        channel: Arc<RwLock<UdpChannel>>, node_db: Arc<RwLock<NodeDatabase>>,
-        vivaldi_model: Arc<RwLock<vivaldi::Model<Dimension2>>>
-    ) -> UdpIoContext {
-        UdpIoContext { channel, node_db, vivaldi_model }
-    }
-
-    pub fn send(&self, payload: Bytes, address: SocketAddr) {
-        self.channel
-            .write()
-            .send_queue
-            .push_back(Datagram { payload, address });
-    }
-
-    pub fn send_with_latency(&self, payload: Bytes, node: NodeEntry) {
-        let latency = match self.channel.read().get_latency(&node.id) {
-            Some(l) => l.clone(),
-            None => 0.0,
-        };
-        /*
-        let handle = thread::spawn(|| {
-            thread::sleep(Duration::from_millis(latency as u64));
-            //debug!("payload = {:?}", payload);
-            /*
-            self.channel
-                .write()
-                .send_queue
-                .push_back(Datagram { payload, address: node.endpoint.address });
-                */
-        });
-        */
-        crossbeam::scope(|scope| {
-                thread::sleep(Duration::from_millis(latency as u64));
-                self.channel
-                    .write()
-                    .send_queue
-                    .push_back(Datagram { payload, address: node.endpoint.address });
-            }
-        );
-    }
-}
-*/
-
 /// NetworkService implements the P2P communication between different nodes. It
 /// manages connections between peers, including accepting new peers or dropping
 /// existing peers. Inside NetworkService, it has an IoService event loop with a
@@ -587,7 +552,7 @@ pub struct NetworkServiceInner {
     pub config: NetworkConfiguration,
     udp_socket: Mutex<UdpSocket>,
     tcp_listener: Mutex<TcpListener>,
-    udp_channel: RwLock<UdpChannel>,
+    udp_channel: UdpChannel,
     discovery: Mutex<Option<Discovery>>,
 
     // TODO: add coordinate
@@ -606,6 +571,7 @@ pub struct NetworkServiceInner {
 
     /// Delayed message queue and corresponding latency
     delayed_queue: Option<DelayedQueue>,
+    udp_delayed_queue: Option<UDPDelayedQueue>,
 }
 
 struct DelayedQueue {
@@ -658,6 +624,27 @@ impl DelayedQueue {
         };
     }
 }
+struct UDPDelayedQueue {
+    queue: Mutex<BinaryHeap<DelayedDatagram>>,
+    latencies: RwLock<HashMap<NodeId, Duration>>,
+}
+
+impl UDPDelayedQueue {
+    fn new() -> Self {
+        UDPDelayedQueue {
+            queue: Mutex::new(BinaryHeap::new()),
+            latencies: RwLock::new(HashMap::new()),
+        }
+    }
+
+    fn send_delayed_messages(&self, uio: &UdpIoContext) {
+        let data = self.queue.lock().pop().unwrap().data;
+        let elapsed = data.insert_time.elapsed().as_millis();
+        debug!("test udp: pop from delay queue, elapsed = {}", elapsed);
+        uio.send(data.payload, data.address);
+    }
+}
+
 
 impl NetworkServiceInner {
     pub fn new(
@@ -758,6 +745,7 @@ impl NetworkServiceInner {
         );
 
         let nodes_path = config.config_path.clone();
+        let udp_channel = UdpChannel::new();
 
         let mut inner = NetworkServiceInner {
             metadata: HostMetadata {
@@ -770,7 +758,7 @@ impl NetworkServiceInner {
                 public_endpoint,
             },
             config: config.clone(),
-            udp_channel: RwLock::new(UdpChannel::new()),
+            udp_channel,
             discovery: Mutex::new(discovery),
             vivaldi_model: model,
             coordinate_manager: Mutex::new(coordinate_manager),
@@ -793,6 +781,7 @@ impl NetworkServiceInner {
             dropped_nodes: RwLock::new(HashSet::new()),
             is_consortium: config.is_consortium,
             delayed_queue: None,
+            udp_delayed_queue: None,
             cluster_result: RwLock::new(HashMap::new()),
         };
 
@@ -819,6 +808,7 @@ impl NetworkServiceInner {
         }
         let mut inner = r.unwrap();
         inner.delayed_queue = Some(DelayedQueue::new());
+        inner.udp_delayed_queue = Some(UDPDelayedQueue::new());
         Ok(inner)
     }
 
@@ -839,7 +829,21 @@ impl NetworkServiceInner {
             }
         }
 
-        self.udp_channel.write().add_latency(&peer, latency_ms);
+        match self.udp_delayed_queue {
+            Some(ref queue) => {
+                let mut latencies = queue.latencies.write();
+                latencies
+                    .insert(peer, Duration::from_millis(latency_ms as u64));
+            }
+            None => { 
+                return Err(
+                "conflux not in test mode, and does not support add_latency"
+                    .into(),
+                );
+            }
+        }
+
+        //self.udp_channel.add_latency(&peer, latency_ms);
         Ok(())
     }
 
@@ -955,7 +959,7 @@ impl NetworkServiceInner {
                 .read()
                 .sample_trusted_nodes(DISCOVER_NODES_COUNT, &allow_ips);
             discovery.try_ping_nodes(
-                &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model),
+                &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model, Some(io), self),
                 nodes,
             );
             io.register_timer(
@@ -1782,18 +1786,56 @@ impl NetworkServiceInner {
         action(&NetworkContext::new(io, handler, protocol, self))
     }
 
+    pub fn udp_send_with_latency(&self, io: &IoContext<NetworkIoMessage>, payload: Bytes, node: NodeEntry) -> Result<(), Error> {
+        let latency = 
+            self.udp_delayed_queue.as_ref().and_then(|q| {
+                 q.latencies.read().get(&node.id).copied()
+            });
+        match latency {
+            Some(l) => {
+                let now = Instant::now();
+                let ts_to_send = now + l;
+                let q =
+                    self.udp_delayed_queue.as_ref().unwrap();
+                let mut queue = q.queue.lock();
+                queue.push(DelayedDatagram::new(
+                    ts_to_send, 
+                    Datagram {
+                        payload,
+                        address: node.endpoint.address,
+                        insert_time: now,
+                    }),
+                );
+                io.register_timer_once_nocancel(
+                    SEND_DELAYED_UDP,
+                    l,
+                )?;
+            }
+            None => {
+                let now = Instant::now();
+                self.udp_channel.send(Datagram{
+                    payload,
+                    address: node.endpoint.address,
+                    insert_time: now,
+                });
+            }
+        }
+        Ok(())
+    }
+
+
     fn udp_readable(&self, io: &IoContext<NetworkIoMessage>) {
         let udp_socket = self.udp_socket.lock();
         let writable;
         {
-            let udp_channel = self.udp_channel.read();
+            let udp_channel = &self.udp_channel;
             writable = udp_channel.any_sends_queued();
         }
 
         let mut buf = [0u8; MAX_DATAGRAM_SIZE];
         match udp_socket.recv_from(&mut buf) {
             Ok(Some((len, address))) => self
-                .on_udp_packet(&buf[0..len], address)
+                .on_udp_packet(io, &buf[0..len], address)
                 .unwrap_or_else(|e| {
                     debug!("Error processing UDP packet: {:?}", e);
                 }),
@@ -1805,7 +1847,7 @@ impl NetworkServiceInner {
 
         let new_writable;
         {
-            let udp_channel = self.udp_channel.read();
+            let udp_channel = &self.udp_channel;
             new_writable = udp_channel.any_sends_queued();
         }
 
@@ -1820,8 +1862,11 @@ impl NetworkServiceInner {
     }
 
     fn udp_writable(&self, io: &IoContext<NetworkIoMessage>) {
+        let start_time = Instant::now();
+        //debug!("Test UDP: successfully send udp, waiting for {:?} ms", elapsed_time);
         let udp_socket = self.udp_socket.lock();
-        let mut udp_channel = self.udp_channel.write();
+        debug!("Test UDP: wait for udp socket lock, waiting for {:?} ms", start_time.elapsed().as_millis());
+        let udp_channel = &self.udp_channel;
         while let Some(data) = udp_channel.dequeue_send() {
             match udp_socket.send_to(&data.payload, &data.address) {
                 Ok(Some(size)) if size == data.payload.len() => {
@@ -1851,7 +1896,7 @@ impl NetworkServiceInner {
     }
 
     fn on_udp_packet(
-        &self, packet: &[u8], from: SocketAddr,
+        &self, io: &IoContext<NetworkIoMessage>, packet: &[u8], from: SocketAddr,
     ) -> Result<(), Error> {
         if packet.is_empty() {
             return Ok(());
@@ -1861,7 +1906,7 @@ impl NetworkServiceInner {
             UDP_PROTOCOL_DISCOVERY => {
                 if let Some(discovery) = self.discovery.lock().as_mut() {
                     discovery.on_packet(
-                        &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model),
+                        &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model, Some(io), self),
                         &packet[1..],
                         from,
                     )?;
@@ -1874,7 +1919,7 @@ impl NetworkServiceInner {
             UDP_PROTOCOL_COORDINATE => {
                 let mut coordinate_manager = self.coordinate_manager.lock();
                 coordinate_manager.on_packet(
-                        &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model),
+                        &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model, Some(io), self),
                         &packet[1..],
                         from,
                     )?;
@@ -2015,6 +2060,8 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                         &self.udp_channel,
                         &self.node_db,
                         &self.vivaldi_model,
+                        Some(io), 
+                        self,
                     ))
                 }
 
@@ -2066,6 +2113,8 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                         &self.udp_channel,
                         &self.node_db,
                         &self.vivaldi_model,
+                        Some(io), 
+                        self,
                     ),
                     &sess_node_entries,
                 );
@@ -2093,6 +2142,19 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
             SEND_DELAYED_MESSAGES => {
                 if let Some(ref queue) = self.delayed_queue {
                     queue.send_delayed_messages(self);
+                }
+            }
+            SEND_DELAYED_UDP => {
+                if let Some(ref queue) = self.udp_delayed_queue {
+                    queue.send_delayed_messages(
+                        &UdpIoContext::new(
+                        &self.udp_channel,
+                        &self.node_db,
+                        &self.vivaldi_model,
+                        Some(io), 
+                        self
+                        )
+                    );
                 }
             }
             _ => match self.timers.read().get(&token).cloned() {
@@ -2307,7 +2369,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 .expect("Error reregistering stream"),
             UDP_MESSAGE => {
                 let udp_socket = self.udp_socket.lock();
-                let udp_channel = self.udp_channel.read();
+                let udp_channel = &self.udp_channel;
 
                 let registration = if udp_channel.any_sends_queued() {
                     Ready::readable() | Ready::writable()
@@ -2375,6 +2437,40 @@ impl Eq for DelayMessageContext {}
 impl PartialEq for DelayMessageContext {
     fn eq(&self, other: &Self) -> bool { self.ts == other.ts }
 }
+struct DelayedDatagram {
+    ts: Instant,
+    data: Datagram,
+}
+
+impl DelayedDatagram {
+    pub fn new(
+        ts: Instant,
+        data: Datagram
+    ) -> Self
+    {
+        DelayedDatagram {
+            ts,
+            data
+        }
+    }
+}
+
+impl Ord for DelayedDatagram {
+    fn cmp(&self, other: &Self) -> Ordering { other.ts.cmp(&self.ts) }
+}
+
+impl PartialOrd for DelayedDatagram {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        other.ts.partial_cmp(&self.ts)
+    }
+}
+
+impl Eq for DelayedDatagram {}
+
+impl PartialEq for DelayedDatagram {
+    fn eq(&self, other: &Self) -> bool { self.ts == other.ts }
+}
+
 
 /// Wrapper around network service.
 pub struct NetworkContext<'a> {

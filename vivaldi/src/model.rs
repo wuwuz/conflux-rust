@@ -115,6 +115,10 @@ where
         // 		δ × ( rtt − ||xi − xj|| )
         //
         let weighted_force = weighted_error * (rtt.as_secs_f64() - dist);
+        if weighted_force > 0.1 {
+            debug!("Coordinate: detect massive force, no update");
+            return Default::default();
+        }
 
         // Unit vector (part of 4)
         //
