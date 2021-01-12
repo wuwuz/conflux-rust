@@ -50,6 +50,12 @@ use crossbeam;
 //#[macro_use]
 use scan_fmt;
 use delay_queue::{Delay, DelayQueue};
+use metrics::{
+    register_meter_with_group, Gauge, GaugeUsize, Lock, Meter, MeterTimer,
+    RwLockExtensions,
+};
+#[macro_use]
+use lazy_static::*;
 
 const MAX_SESSIONS: usize = 2048;
 
@@ -73,6 +79,11 @@ const COORDINATE_UPDATE: TimerToken = SYS_TIMER + 10;
 const COORDINATE_REFRESH: TimerToken = SYS_TIMER + 11;
 const COORDINATE_CLUSTER: TimerToken = SYS_TIMER + 12;
 const SEND_DELAYED_UDP: TimerToken = SYS_TIMER + 13;
+
+lazy_static! {
+    static ref UDP_LOCK: Lock =
+            Lock::register("udp_lock");
+}
 
 pub const DEFAULT_HOUSEKEEPING_TIMEOUT: Duration = Duration::from_secs(2);
 // for DISCOVERY_REFRESH TimerToken
@@ -147,15 +158,15 @@ impl UdpChannel {
         }
     }
 
-    pub fn any_sends_queued(&self) -> bool { !self.send_queue.read().is_empty() }
+    pub fn any_sends_queued(&self) -> bool { !self.send_queue.read_with_metric(&UDP_LOCK).is_empty() }
 
     pub fn dequeue_send(&self) -> Option<Datagram> {
         debug!("Test UDP: deque");
-        self.send_queue.write().pop_front()
+        self.send_queue.write_with_metric(&UDP_LOCK).pop_front()
     }
 
     pub fn requeue_send(&self, datagram: Datagram) {
-        self.send_queue.write().push_front(datagram)
+        self.send_queue.write_with_metric(&UDP_LOCK).push_front(datagram)
     }
 
     pub fn get_latency(&self, peer: &NodeId) -> Option<f64> {
@@ -172,7 +183,7 @@ impl UdpChannel {
 
     // push data into the queue
     pub fn send(&self, data: Datagram) {
-        self.send_queue.write() 
+        self.send_queue.write_with_metric(&UDP_LOCK) 
             .push_back(data);
     }
 
@@ -1994,7 +2005,10 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
     ) {
         match stream {
             FIRST_SESSION..=LAST_SESSION => self.session_writable(stream, io),
-            UDP_MESSAGE => self.udp_writable(io),
+            UDP_MESSAGE => {
+                debug!("test udp: udp writable!");
+                self.udp_writable(io);
+            }
             _ => panic!("Received unknown writable token"),
         }
     }
@@ -2073,9 +2087,11 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
             COORDINATE_REFRESH => {
                 let mut coordinate_manager = self.coordinate_manager.lock();
                 coordinate_manager.refresh();
+                /*
                 io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
                     debug!("Error updating discovery registration: {:?}", e)
                 });
+                */
             }
             COORDINATE_UPDATE => {
                 // get all sessions's NodeEntry
@@ -2156,6 +2172,9 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                         )
                     );
                 }
+                io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
+                    debug!("Error updating discovery registration: {:?}", e)
+                });
             }
             _ => match self.timers.read().get(&token).cloned() {
                 Some(timer) => {
