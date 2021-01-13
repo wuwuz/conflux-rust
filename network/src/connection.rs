@@ -267,12 +267,16 @@ impl<Socket: GenericSocket> GenericConnection<Socket> {
     /// Continue to send out the uncompleted packet, or pop new packet from
     /// queue to send out.
     fn write_next_from_queue(&mut self) -> Result<WriteStatus, Error> {
+        debug!("Test tcp: try write next from queue");
         // In case of last packet is all sent out.
         if self.sending_packet.is_none() {
             // get packet from queue to send
             let (mut packet, _) = match self.send_queue.pop_front() {
                 Some(item) => item,
-                None => return Ok(WriteStatus::Complete),
+                None => {
+                    debug!("Test tcp: send queue is empty");
+                    return Ok(WriteStatus::Complete);
+                }
             };
 
             // assemble packet to send, e.g. prefix length to packet
@@ -301,6 +305,12 @@ impl<Socket: GenericSocket> GenericConnection<Socket> {
 
         //check_delay_test(&packet.data);
 
+        //FIXME
+        debug!(
+            "Succeed to send socket data, token = {}, size = {}",
+            self.token,
+            size
+        );
         trace!(
             "Succeed to send socket data, token = {}, size = {}",
             self.token,
@@ -351,6 +361,10 @@ impl<Socket: GenericSocket> GenericConnection<Socket> {
 
             let packet = Packet::new(data, priority)?;
             self.send_queue.push_back(packet, priority);
+
+            NETWORK_SEND_QUEUE_SIZE.update(self.send_queue.len());
+            debug!("Sending packet, token = {}, size = {}", self.token, size);
+            debug!("Debug tcp: send queue size when push back packet = {}", self.send_queue.len());
 
             SEND_METER.mark(size);
             match priority {
