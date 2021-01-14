@@ -457,10 +457,12 @@ impl Session {
             host.node_db.write().insert_with_token(entry, self.token());
         }
 
+        /*
         let remote_coord: vivaldi::Coordinate<Dimension2> = rlp.val_at(3)?;
         let id = self.metadata.id.expect("should have ID after handshake");
         debug!("Recv hello coord from {:?} ", &self.address);
         host.node_db.write().update_node_coordinate(id, &remote_coord);
+        */
 
         self.had_hello = Some(Instant::now());
 
@@ -561,6 +563,7 @@ impl Session {
 
     /// Send a Disconnect packet immediately to the remote peer.
     pub fn send_disconnect(&mut self, reason: DisconnectReason) -> Error {
+        debug!("debug tcp: send disconnected, reason = {:?}", reason);
         let packet = rlp::encode(&reason);
         let _ = self.send_packet_immediately(
             None,
@@ -576,13 +579,16 @@ impl Session {
         &mut self, io: &IoContext<Message>, host: &NetworkServiceInner,
     ) -> Result<(), Error> {
         debug!("Sending Hello, session = {:?}", self);
-        let mut rlp = RlpStream::new_list(4);
+        //let mut rlp = RlpStream::new_list(4);
+        let mut rlp = RlpStream::new_list(3);
         rlp.append(&host.metadata.network_id);
         rlp.append_list(&*host.metadata.protocols.read());
         host.metadata.public_endpoint.to_rlp_list(&mut rlp);
+        /* 
         let self_coord = host.vivaldi_model.read().get_coordinate().clone();
         rlp.append(&self_coord);
         debug!("Sending Hello, get self coord = {:?}", self_coord);
+        */
         self.send_packet(
             io,
             None,

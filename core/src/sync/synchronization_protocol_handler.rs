@@ -630,7 +630,7 @@ impl SynchronizationProtocolHandler {
         }
 
         if let Some(test_id) = io.get_test_id(peer) {
-            debug!("debug tcp: get tcp message from {}, node id = {:?}", test_id, peer);
+            //debug!("debug tcp: get tcp message from {}, node id = {:?}", test_id, peer);
         }
 
         let ctx = Context {
@@ -1238,14 +1238,19 @@ impl SynchronizationProtocolHandler {
         if msg_version_valid_till == self.protocol_version {
             msg_version_valid_till = ProtocolVersion(std::u8::MAX);
         }
+
+        let mut cnt = 0;
         for id in peer_ids {
             let peer_version = self.syn.get_peer_version(&id)?;
             if peer_version >= msg_version_introduced
                 && peer_version <= msg_version_valid_till
             {
                 msg.send(io, &id)?;
+                cnt += 1;
             }
         }
+
+        debug!("debug tcp: broadcast to {} peers", cnt);
 
         Ok(())
     }

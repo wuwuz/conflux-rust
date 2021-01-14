@@ -992,6 +992,7 @@ impl NetworkServiceInner {
                 self.config.discovery_round_timeout,
             )?;
 
+            /* 
             io.register_timer(
                 COORDINATE_REFRESH,
                 DEFAULT_COORDINATE_REFRESH_TIMEOUT,
@@ -1004,6 +1005,7 @@ impl NetworkServiceInner {
                 COORDINATE_CLUSTER,
                 self.config.cluster_round_timeout,
             )?;
+            */
         }
         io.register_timer(NODE_TABLE, self.config.node_table_timeout)?;
         io.register_timer(CHECK_SESSIONS, DEFAULT_CHECK_SESSIONS_TIMEOUT)?;
@@ -2555,10 +2557,10 @@ impl<'a> NetworkContextTrait for NetworkContext<'a> {
         {
             match self.network_service.node_id_to_test_id.read().get(node_id) {
                 Some(x) => {
-                    debug!("debug tcp: sending tcp to {}", x);
+                    //debug!("debug tcp: sending tcp to {}", x);
                 } 
                 None => {
-                    debug!("debug tcp: sending tcp to a node without its test id, node id = {:?}", node_id);
+                    //debug!("debug tcp: sending tcp to a node without its test id, node id = {:?}", node_id);
                 }
             }
         }

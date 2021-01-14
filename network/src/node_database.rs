@@ -810,6 +810,7 @@ impl NodeDatabase {
 
     /// Set the specified node to blacklisted.
     pub fn set_blacklisted(&mut self, id: &NodeId) {
+        debug!("debug tcp: set blacklisted, id = {:?}", id);
         // update the last failure time
         self.note_failure(
             id, true,  /* by_connection */
