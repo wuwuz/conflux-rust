@@ -534,7 +534,7 @@ impl Session {
         priority: SendQueuePriority,
     ) -> Result<SendQueueStatus, Error>
     {
-        debug!("debug tcp: send packet in sessions.rs");
+        //debug!("debug tcp: send packet in sessions.rs");
         self.check_message_protocol_version(
             protocol.clone(),
             min_proto_version,

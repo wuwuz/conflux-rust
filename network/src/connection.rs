@@ -267,7 +267,7 @@ impl<Socket: GenericSocket> GenericConnection<Socket> {
     /// Continue to send out the uncompleted packet, or pop new packet from
     /// queue to send out.
     fn write_next_from_queue(&mut self) -> Result<WriteStatus, Error> {
-        debug!("debug tcp: try write next from queue");
+        //debug!("debug tcp: try write next from queue");
         // In case of last packet is all sent out.
         if self.sending_packet.is_none() {
             // get packet from queue to send
@@ -351,10 +351,10 @@ impl<Socket: GenericSocket> GenericConnection<Socket> {
         priority: SendQueuePriority,
     ) -> Result<SendQueueStatus, Error>
     {
-        debug!("debug tcp: send in connection.rs");
+        //debug!("debug tcp: send in connection.rs");
         if !data.is_empty() {
             let size = data.len();
-            debug!("debug tcp: send in connection.rs");
+            //debug!("debug tcp: send in connection.rs");
             if self.assembler.is_oversized(size) {
                 debug!("debug tcp: oversize");
                 return Err(ErrorKind::OversizedPacket.into());
@@ -366,8 +366,8 @@ impl<Socket: GenericSocket> GenericConnection<Socket> {
             self.send_queue.push_back(packet, priority);
 
             NETWORK_SEND_QUEUE_SIZE.update(self.send_queue.len());
-            debug!("debug tcp: Sending packet, token = {}, size = {}", self.token, size);
-            debug!("debug tcp: send queue size when push back packet = {}", self.send_queue.len());
+            //debug!("debug tcp: Sending packet, token = {}, size = {}", self.token, size);
+            //debug!("debug tcp: send queue size when push back packet = {}", self.send_queue.len());
 
             SEND_METER.mark(size);
             match priority {
@@ -387,7 +387,7 @@ impl<Socket: GenericSocket> GenericConnection<Socket> {
             }
             io.update_registration(self.token).ok();
         } else {
-            debug!("debug tcp: data is empty");
+            //debug!("debug tcp: data is empty");
         }
 
         Ok(SendQueueStatus {

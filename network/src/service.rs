@@ -161,7 +161,7 @@ impl UdpChannel {
     pub fn any_sends_queued(&self) -> bool { !self.send_queue.read_with_metric(&UDP_LOCK).is_empty() }
 
     pub fn dequeue_send(&self) -> Option<Datagram> {
-        debug!("Test UDP: deque");
+        //debug!("Test UDP: deque");
         self.send_queue.write_with_metric(&UDP_LOCK).pop_front()
     }
 
@@ -233,7 +233,7 @@ impl<'a> UdpIoContext<'a> {
             Some(l) => {
                 let now = Instant::now();
                 let ts_to_send = now + l;
-                debug!("test udp: sending packet with latency {:?} ms, insert delay queue", l.as_millis());
+                //debug!("test udp: sending packet with latency {:?} ms, insert delay queue", l.as_millis());
                 let q =
                     self.network_service.udp_delayed_queue.as_ref().unwrap();
                 let mut queue = q.queue.lock();
@@ -583,6 +583,9 @@ pub struct NetworkServiceInner {
     /// Delayed message queue and corresponding latency
     delayed_queue: Option<DelayedQueue>,
     udp_delayed_queue: Option<UDPDelayedQueue>,
+
+    // node id to test id
+    node_id_to_test_id: RwLock<HashMap<NodeId, usize>>,
 }
 
 struct DelayedQueue {
@@ -651,7 +654,7 @@ impl UDPDelayedQueue {
     fn send_delayed_messages(&self, uio: &UdpIoContext) {
         let data = self.queue.lock().pop().unwrap().data;
         let elapsed = data.insert_time.elapsed().as_millis();
-        debug!("test udp: pop from delay queue, elapsed = {}", elapsed);
+        //debug!("test udp: pop from delay queue, elapsed = {}", elapsed);
         uio.send(data.payload, data.address);
     }
 }
@@ -757,6 +760,7 @@ impl NetworkServiceInner {
 
         let nodes_path = config.config_path.clone();
         let udp_channel = UdpChannel::new();
+        let node_id_to_test_id = RwLock::new(HashMap::new());
 
         let mut inner = NetworkServiceInner {
             metadata: HostMetadata {
@@ -794,6 +798,7 @@ impl NetworkServiceInner {
             delayed_queue: None,
             udp_delayed_queue: None,
             cluster_result: RwLock::new(HashMap::new()),
+            node_id_to_test_id,
         };
 
         for n in &config.boot_nodes {
@@ -876,7 +881,8 @@ impl NetworkServiceInner {
                         let s = s.trim_start_matches("0x");
                         let id = s.parse::<NodeId>().expect("cannot parse to nodeid");
                         debug!("add latency: get id = {:?}", &id);
-                        all_node_id.push(id);
+                        all_node_id.push(id.clone());
+                        self.node_id_to_test_id.write().insert(id.clone(), cnt);
                         cnt += 1;
                     }
                 }
@@ -1158,7 +1164,7 @@ impl NetworkServiceInner {
         let mut killing_peers: Vec<NodeId> = Vec::new();
 
         let (handshake_count, egress_count, ingress_count) =
-            self.sessions.stat();
+            self.sessions.stat_with_id(&self.node_id_to_test_id);
 
         debug!("connect cluster peers: stat = (handshaking {}, egress {}, ingress {})", 
             handshake_count, egress_count, ingress_count);
@@ -1876,13 +1882,13 @@ impl NetworkServiceInner {
         let start_time = Instant::now();
         //debug!("Test UDP: successfully send udp, waiting for {:?} ms", elapsed_time);
         let udp_socket = self.udp_socket.lock();
-        debug!("Test UDP: wait for udp socket lock, waiting for {:?} ms", start_time.elapsed().as_millis());
+        //debug!("Test UDP: wait for udp socket lock, waiting for {:?} ms", start_time.elapsed().as_millis());
         let udp_channel = &self.udp_channel;
         while let Some(data) = udp_channel.dequeue_send() {
             match udp_socket.send_to(&data.payload, &data.address) {
                 Ok(Some(size)) if size == data.payload.len() => {
                     let elapsed_time = data.insert_time.elapsed().as_millis();
-                    debug!("Test UDP: successfully send udp, waiting for {:?} ms", elapsed_time);
+                    //debug!("Test UDP: successfully send udp, waiting for {:?} ms", elapsed_time);
                 }
                 Ok(Some(_)) => {
                     warn!("UDP sent incomplete datagram");
@@ -2006,7 +2012,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
         match stream {
             FIRST_SESSION..=LAST_SESSION => self.session_writable(stream, io),
             UDP_MESSAGE => {
-                debug!("test udp: udp writable!");
+                //debug!("test udp: udp writable!");
                 self.udp_writable(io);
             }
             _ => panic!("Received unknown writable token"),
@@ -2546,6 +2552,16 @@ impl<'a> NetworkContextTrait for NetworkContext<'a> {
         version_valid_till: ProtocolVersion, priority: SendQueuePriority,
     ) -> Result<(), Error>
     {
+        {
+            match self.network_service.node_id_to_test_id.read().get(node_id) {
+                Some(x) => {
+                    debug!("debug tcp: sending tcp to {}", x);
+                } 
+                None => {
+                    debug!("debug tcp: sending tcp to a node without its test id, node id = {:?}", node_id);
+                }
+            }
+        }
         //check_delay_test(&msg);
         if version_valid_till < self.min_supported_version {
             bail!(ErrorKind::SendUnsupportedMessage {
@@ -2574,7 +2590,7 @@ impl<'a> NetworkContextTrait for NetworkContext<'a> {
                 });
             match latency {
                 Some(latency) => {
-                    debug!("message latency is {:?}", latency);
+                    //debug!("message latency is {:?}", latency);
                     let q =
                         self.network_service.delayed_queue.as_ref().unwrap();
                     let mut queue = q.queue.lock();

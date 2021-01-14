@@ -85,6 +85,8 @@ impl Handleable for StatusV2 {
                     None => TokenBucketManager::default(),
                 };
 
+            let peer_layer_type = PeerLayerType::Random;
+            /*
             let peer_layer_type;
             {
                 let id_to_peer_layer_type = 
@@ -97,6 +99,7 @@ impl Handleable for StatusV2 {
                     None => PeerLayerType::Random,
                 };
             }
+            */
 
             let mut peer_state = SynchronizationPeerState {
                 node_id: ctx.node_id(),
@@ -216,6 +219,7 @@ impl Handleable for StatusV3 {
                     None => TokenBucketManager::default(),
                 };
 
+            /*
             let peer_layer_type;
             {
                 let id_to_peer_layer_type = 
@@ -228,6 +232,8 @@ impl Handleable for StatusV3 {
                     None => PeerLayerType::Random,
                 };
             }
+            */
+            let peer_layer_type = PeerLayerType::Random;
 
             let mut peer_state = SynchronizationPeerState {
                 node_id: ctx.node_id(),

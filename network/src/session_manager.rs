@@ -126,6 +126,36 @@ impl SessionManager {
         (handshakes, egress, ingress)
     }
 
+    /// Retrieves the session count of handshakes, egress and ingress.
+    pub fn stat_with_id(&self, node_id_to_test_id: &RwLock<HashMap<NodeId, usize>> ) -> (usize, usize, usize) {
+        let mut handshakes = 0;
+        let mut egress = 0;
+        let mut ingress = 0;
+
+        for (_, s) in self.sessions.read().iter() {
+            match s.try_read() {
+                Some(ref s) if s.is_ready() && s.metadata.originated => {
+                    let map = node_id_to_test_id.read();
+                    if let Some(x) = map.get(s.id().unwrap()) {
+                        debug!("test tcp: connected with peer {}", x);
+                    }
+                    egress += 1
+                }
+                Some(ref s) if s.is_ready() && !s.metadata.originated => {
+                    let map = node_id_to_test_id.read();
+                    if let Some(x) = map.get(s.id().unwrap()) {
+                        debug!("test tcp: connected with peer {}", x);
+                    }
+                    ingress += 1
+                }
+                _ => handshakes += 1,
+            }
+        }
+
+        (handshakes, egress, ingress)
+    }
+
+
     /// Check the session existence for the specified node id.
     pub fn contains_node(&self, id: &NodeId) -> bool {
         self.node_id_index.read().contains_key(id)
