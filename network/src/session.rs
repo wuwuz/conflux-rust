@@ -534,6 +534,7 @@ impl Session {
         priority: SendQueuePriority,
     ) -> Result<SendQueueStatus, Error>
     {
+        debug!("debug tcp: send packet in sessions.rs");
         self.check_message_protocol_version(
             protocol.clone(),
             min_proto_version,
@@ -581,6 +582,7 @@ impl Session {
         host.metadata.public_endpoint.to_rlp_list(&mut rlp);
         let self_coord = host.vivaldi_model.read().get_coordinate().clone();
         rlp.append(&self_coord);
+        debug!("Sending Hello, get self coord = {:?}", self_coord);
         self.send_packet(
             io,
             None,
