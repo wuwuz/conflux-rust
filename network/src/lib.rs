@@ -342,6 +342,8 @@ pub trait NetworkContext {
     fn self_node_id(&self) -> NodeId;
 
     fn get_cluster_result(&self, id: &NodeId) -> Option<usize>;
+
+    fn get_test_id(&self, id: &NodeId) -> Option<usize>;
 }
 
 #[derive(Debug, Clone)]

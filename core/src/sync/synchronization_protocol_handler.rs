@@ -629,6 +629,10 @@ impl SynchronizationProtocolHandler {
             }
         }
 
+        if let Some(test_id) = io.get_test_id(peer) {
+            debug!("debug tcp: get tcp message from {}, node id = {:?}", test_id, peer);
+        }
+
         let ctx = Context {
             node_id: *peer,
             io,

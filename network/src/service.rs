@@ -2664,6 +2664,16 @@ impl<'a> NetworkContextTrait for NetworkContext<'a> {
             .write()
             .set_tag(peer, key, value);
     }
+
+    fn get_test_id(&self, id: &NodeId) -> Option<usize> {
+        match self.network_service
+            .node_id_to_test_id
+            .read()
+            .get(id) {
+            Some(x) => Some(x.clone()),
+            None => None,
+        }
+    }
 }
 
 fn save_key(path: &Path, key: &Secret) {
