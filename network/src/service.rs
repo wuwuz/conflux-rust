@@ -1748,9 +1748,21 @@ impl NetworkServiceInner {
             deregister = remote || sess.done();
             token = sess.token();
             assert_eq!(sess.id().unwrap().clone(), node_id.clone());
+            let test_id = 
+                match self.node_id_to_test_id.read().get(node_id) {
+                    Some(x) => {
+                        x.clone()
+                        //debug!("debug tcp: sending tcp to {}", x);
+                    } 
+                    None => {
+                        66666
+                        //debug!("debug tcp: sending tcp to a node without its test id, node id = {:?}", node_id);
+                    }
+                };
+
             debug!(
-                "kill connection, deregister = {}, reason = {:?}, session = {:?}, op = {:?}",
-                deregister, reason, *sess, op
+                "kill connection, deregister = {}, test_id = {}, reason = {:?}, session = {:?}, op = {:?}",
+                deregister, test_id, reason, *sess, op
             );
 
             if remote {

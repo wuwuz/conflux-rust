@@ -40,7 +40,8 @@ const COORDINATE_PROTOCOL_VERSION: u32 = 1;
 const PACKET_PING: u8 = 1;
 const PACKET_PONG: u8 = 2;
 
-const PING_TIMEOUT: Duration = Duration::from_millis(500);
+//const PING_TIMEOUT: Duration = Duration::from_millis(500);
+const PING_TIMEOUT: Duration = Duration::from_millis(5000);
 //const PONG_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub const COORDINATE_NEIGHBOR_COUNT: u32 = 16;
@@ -488,9 +489,11 @@ impl CoordinateManager {
         });
 
         // keep the failure notice to update the node_db
+        /* 
         for node_id in nodes_to_expire {
             self.expire_node_request(uio, node_id);
         }
+        */
     }
 
     fn expire_node_request(&mut self, uio: &UdpIoContext, node_id: NodeId) {
