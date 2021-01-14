@@ -1673,9 +1673,20 @@ impl NetworkServiceInner {
                 }
                 deregister = remote || sess.done();
                 failure_id = sess.id().cloned();
+                let test_id = 
+                    match self.node_id_to_test_id.read().get(&(*sess.id().unwrap())) {
+                        Some(x) => {
+                            x.clone()
+                            //debug!("debug tcp: sending tcp to {}", x);
+                        } 
+                        None => {
+                            66666
+                            //debug!("debug tcp: sending tcp to a node without its test id, node id = {:?}", node_id);
+                        }
+                    };
                 debug!(
-                    "kill connection, deregister = {}, reason = {:?}, session = {:?}, op = {:?}",
-                    deregister, reason, *sess, op
+                    "kill connection, deregister = {}, test id = {}, reason = {:?}, session = {:?}, op = {:?}",
+                    deregister, test_id, reason, *sess, op
                 );
             }
         }
