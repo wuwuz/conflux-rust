@@ -339,17 +339,11 @@ impl CoordinateManager {
         let timestamp: u64 = rlp.val_at(3)?;
         let packet_random_num: u32 = rlp.val_at(4)?;
         //self.check_timestamp(timestamp)?;
-        /*
         let elapsed = produce_timestamp() as i64 - timestamp as i64;
         if elapsed < 0 {
             debug!("Coordinate: elapsed time < 0");
         }
         debug!("Coordinate: receive ping from {:?}, random = {}, time = {} ms", &from, packet_random_num, elapsed);
-        */
-        let elapsed = produce_timestamp() as u64 - timestamp as u64;
-        debug!("Coordinate: receive ping from {:?}, random = {}, time = {} ms", &from, packet_random_num, elapsed);
-
-        return Ok(());
 
         // MODIFY: Add a new field here --- the node's coordinate
         let mut response = RlpStream::new_list(5);
@@ -384,7 +378,7 @@ impl CoordinateManager {
             id: node_id.clone(),
             endpoint: pong_to,
         };
-        //self.send_packet(uio, PACKET_PONG, &entry, &response.drain())?;
+        self.send_packet(uio, PACKET_PONG, &entry, &response.drain())?;
 
         // TODO handle the error before sending pong
         if !entry.endpoint.is_valid() {
@@ -410,7 +404,11 @@ impl CoordinateManager {
         let timestamp: u64 = rlp.val_at(2)?;
         let recv_coordinate: vivaldi::Coordinate<Dimension2> = rlp.val_at(3)?;
         let packet_random_num: u32 = rlp.val_at(4)?;
-        let mut rtt = produce_timestamp() - timestamp;
+        let mut rtt = produce_timestamp() as i64 - timestamp as i64;
+        if rtt < 0 {
+            debug!("Coordinate: negative rtt = {}", rtt);
+            return Err("rtt < 0".into())
+        }
         debug!("Coordinate: receive Coordinate Pong from {:?}, random = {}, original_rtt={} ms", &from, &packet_random_num, &rtt);
         if rtt == 0 {
             debug!("Coordinate: receive Coordinate Pong from {:?} 0ms!", &from);
@@ -462,7 +460,7 @@ impl CoordinateManager {
             }
             if let Some(h) = self.history_rtt.get_mut(node_id) {
                 let mut history = h.lock().unwrap();
-                history.observe(rtt);
+                history.observe(rtt as u64);
                 //debug!("history = {:?}", history);
                 let mut model = self.vivaldi_model.write();
                 let med = history.get_median();
