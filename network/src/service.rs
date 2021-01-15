@@ -1959,7 +1959,6 @@ impl NetworkServiceInner {
                     Ok(())
                 }
             }
-            /*
             UDP_PROTOCOL_COORDINATE => {
                 let mut coordinate_manager = self.coordinate_manager.lock();
                 coordinate_manager.on_packet(
@@ -1969,7 +1968,6 @@ impl NetworkServiceInner {
                     )?;
                 Ok(())
             }
-            */
             _ => {
                 warn!("Unknown UDP protocol. Simply drops the message!");
                 Ok(())

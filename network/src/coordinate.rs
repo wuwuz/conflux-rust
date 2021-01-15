@@ -370,7 +370,7 @@ impl CoordinateManager {
             id: node_id.clone(),
             endpoint: pong_to,
         };
-        self.send_packet(uio, PACKET_PONG, &entry, &response.drain())?;
+        //self.send_packet(uio, PACKET_PONG, &entry, &response.drain())?;
 
         // TODO handle the error before sending pong
         if !entry.endpoint.is_valid() {
