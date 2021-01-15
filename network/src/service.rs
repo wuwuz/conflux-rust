@@ -2131,9 +2131,10 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 // decoupling..
 
                 let sessions = self.sessions.all();
-                let mut sess_ids = Vec::new();
+                //let mut sess_ids = Vec::new();
                 let mut sess_node_entries = Vec::new();
 
+                /*
                 for sess in sessions.iter() {
                     sess_ids.push(sess.read().metadata.id.clone());
                 }
@@ -2154,6 +2155,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                         debug!("Coordinate Update: No ID available");
                     }
                 }
+                */
 
                 let mut coordinate_manager = self.coordinate_manager.lock();
                 coordinate_manager.round(
@@ -2171,6 +2173,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 });
             }
             COORDINATE_CLUSTER => {
+                /*
                 let self_coord = self.vivaldi_model.read().get_coordinate().clone();
                 {
                     self.node_db.write().cluster_all_node(self.config.cluster_num, self.metadata.id().clone(), self_coord);
@@ -2180,6 +2183,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                     *cluster_result = self.node_db.read().get_cluster_result().clone();
                 }
                 self.connect_cluster_peers(io);
+                */
             }
             NODE_TABLE => {
                 trace!("Refreshing node table");
