@@ -339,7 +339,10 @@ impl CoordinateManager {
         let timestamp: u64 = rlp.val_at(3)?;
         let packet_random_num: u32 = rlp.val_at(4)?;
         //self.check_timestamp(timestamp)?;
-        let elapsed = produce_timestamp() - timestamp;
+        let elapsed = produce_timestamp() as i64 - timestamp as i64;
+        if elapsed < 0 {
+            debug!("Coordinate: elapsed time < 0");
+        }
         debug!("Coordinate: receive ping from {:?}, random = {}, time = {} ms", &from, packet_random_num, elapsed);
 
         // MODIFY: Add a new field here --- the node's coordinate

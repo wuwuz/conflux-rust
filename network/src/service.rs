@@ -1961,12 +1961,18 @@ impl NetworkServiceInner {
             }
             UDP_PROTOCOL_COORDINATE => {
                 let mut coordinate_manager = self.coordinate_manager.lock();
-                coordinate_manager.on_packet(
+                match coordinate_manager.on_packet(
                         &UdpIoContext::new(&self.udp_channel, &self.node_db, &self.vivaldi_model, Some(io), self),
                         &packet[1..],
                         from,
-                    )?;
-                Ok(())
+                    ) {
+                        Ok(_)  => Ok(()),
+                        Err(e) => {
+                            debug!("Coordinate handler error = {:?}", e);
+                            Err(e)
+                        }
+                    }
+                //Ok(())
             }
             _ => {
                 warn!("Unknown UDP protocol. Simply drops the message!");
