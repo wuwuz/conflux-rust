@@ -257,11 +257,14 @@ impl CoordinateManager {
         &mut self, uio: &UdpIoContext, payload: Bytes, //address: SocketAddr,
         node: NodeEntry,
     ) {
-        //uio.send(payload, address);
+        uio.send(payload, node.endpoint.address);
+        //FIXME
+        /*
         match uio.send_with_latency(payload, node) {
             Err(e)=> {debug!("test udp: cannot send with latency, error = {:?}", e);}
             _ => {}
         }
+        */
     }
 
     pub fn on_packet(

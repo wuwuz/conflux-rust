@@ -369,6 +369,7 @@ impl NetworkService {
     }
 
     /// Add a P2P peer to the client as a trusted node
+    //FIXME: remember to force the connection 
     pub fn add_peer(&self, node: NodeEntry) -> Result<(), Error> {
         if let Some(ref x) = self.inner {
             x.node_db.write().insert_trusted(node);
@@ -2608,7 +2609,7 @@ impl<'a> NetworkContextTrait for NetworkContext<'a> {
             let latency =
                 self.network_service.delayed_queue.as_ref().and_then(|q| {
                     session
-                        .write()
+                        .read()
                         .metadata
                         .id
                         .and_then(|id| q.latencies.read().get(&id).copied())
