@@ -322,16 +322,17 @@ impl CoordinateManager {
     ) -> Result<(), Error>
     {
         debug!("Got ping from {:?}", &from);
-        return Ok(());
 
         trace!("Got Ping from {:?}", &from);
 
+        /*
         if !self.ping_throttling.try_acquire(from.ip()) {
             return Err(ErrorKind::Throttling(
                 ThrottlingReason::PacketThrottled("PING"),
             )
             .into());
         }
+        */
 
         let ping_from = NodeEndpoint::from_rlp(&rlp.at(1)?)?;
         let ping_to = NodeEndpoint::from_rlp(&rlp.at(2)?)?;
@@ -359,6 +360,8 @@ impl CoordinateManager {
         response.append(&echo_hash);
         //response.append(&produce_timestamp());
         response.append(&timestamp);
+
+        return Ok(());
 
         // Here: add the coordinate
         {
