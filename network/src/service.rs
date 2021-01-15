@@ -1959,6 +1959,7 @@ impl NetworkServiceInner {
                     Ok(())
                 }
             }
+            /*
             UDP_PROTOCOL_COORDINATE => {
                 let mut coordinate_manager = self.coordinate_manager.lock();
                 coordinate_manager.on_packet(
@@ -1968,6 +1969,7 @@ impl NetworkServiceInner {
                     )?;
                 Ok(())
             }
+            */
             _ => {
                 warn!("Unknown UDP protocol. Simply drops the message!");
                 Ok(())
@@ -2132,7 +2134,7 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
 
                 let sessions = self.sessions.all();
                 //let mut sess_ids = Vec::new();
-                //let mut sess_node_entries = Vec::new();
+                let mut sess_node_entries = Vec::new();
 
                 /*
                 for sess in sessions.iter() {
@@ -2157,7 +2159,6 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 }
                 */
 
-                /*
                 let mut coordinate_manager = self.coordinate_manager.lock();
                 coordinate_manager.round(
                     &UdpIoContext::new(
@@ -2169,7 +2170,6 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                     ),
                     &sess_node_entries,
                 );
-                */
                 io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
                     debug!("Error updating discovery registration: {:?}", e)
                 });
