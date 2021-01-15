@@ -321,6 +321,9 @@ impl CoordinateManager {
         from: &SocketAddr, echo_hash: &[u8],
     ) -> Result<(), Error>
     {
+        debug!("Got ping from {:?}", &from);
+        return Ok(());
+
         trace!("Got Ping from {:?}", &from);
 
         if !self.ping_throttling.try_acquire(from.ip()) {
