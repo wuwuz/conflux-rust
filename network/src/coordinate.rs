@@ -339,11 +339,17 @@ impl CoordinateManager {
         let timestamp: u64 = rlp.val_at(3)?;
         let packet_random_num: u32 = rlp.val_at(4)?;
         //self.check_timestamp(timestamp)?;
+        /*
         let elapsed = produce_timestamp() as i64 - timestamp as i64;
         if elapsed < 0 {
             debug!("Coordinate: elapsed time < 0");
         }
         debug!("Coordinate: receive ping from {:?}, random = {}, time = {} ms", &from, packet_random_num, elapsed);
+        */
+        let elapsed = produce_timestamp() as u64 - timestamp as u64;
+        debug!("Coordinate: receive ping from {:?}, random = {}, time = {} ms", &from, packet_random_num, elapsed);
+
+        return Ok(());
 
         // MODIFY: Add a new field here --- the node's coordinate
         let mut response = RlpStream::new_list(5);
@@ -364,7 +370,6 @@ impl CoordinateManager {
         //response.append(&produce_timestamp());
         response.append(&timestamp);
 
-        return Ok(());
 
         // Here: add the coordinate
         {
