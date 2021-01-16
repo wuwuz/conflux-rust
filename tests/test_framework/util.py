@@ -413,7 +413,7 @@ def connect_nodes(nodes, a, node_num, timeout=60):
     from_connection.addnode(key, peer_addr)
     # poll until hello handshake complete to avoid race conditions
     # with transaction relaying
-    wait_until(lambda: check_handshake(from_connection, to_connection.key), timeout=timeout)
+    #wait_until(lambda: check_handshake(from_connection, to_connection.key), timeout=timeout)
 
 
 def sync_blocks(rpc_connections, *, sync_count=True, wait=1, timeout=60):
