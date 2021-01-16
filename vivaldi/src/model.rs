@@ -1,26 +1,13 @@
-use crate::coordinate::Coordinate;
+use crate::{FLOAT_ZERO, coordinate::Coordinate};
 use crate::vector::Vector;
-use std::time::Duration;
+use std::{time::Duration};
 use rlp::{Decodable, Encodable};
+use rand::Rng;
 
-const FLOAT_ZERO: f64 = 1.0e-8;
+const MIN_ERROR: f64 = 0.1;
 
 /// The Ce algorithm value.
 const ERROR_LIMIT: f64 = 0.25;
-
-/// UnitVector contains a vector that has a magnitude of 1.
-#[derive(PartialEq, Debug)]
-struct UnitVector<V: Vector>(V);
-
-impl<V> UnitVector<V>
-where
-    V: Vector,
-{
-    fn new(vec: V) -> Self {
-        debug_assert!(1.0 - vec.magnitude().0.abs() < FLOAT_ZERO);
-        UnitVector(vec)
-    }
-}
 
 /// A Vivaldi latency model generic over N dimensional vectors.
 ///
@@ -82,6 +69,11 @@ where
     /// ```
     /// return the force applied to the coordinate
     pub fn observe(&mut self, coord: &Coordinate<V>, rtt: Duration) -> V {
+        let mut rtt = rtt.as_millis() as f64;
+        if rtt.abs() < FLOAT_ZERO {
+            rtt = 1.0; // add a very small latency
+            //return V::random()
+        }
         // Sample weight balances local and remote error (1)
         //
         // 		w = ei/(ei + ej)
@@ -92,17 +84,19 @@ where
         //
         // 		es = | ||xi -  xj|| - rtt | / rtt
         //
-        let diff_vec = self.coordinate.vector().clone() - coord.vector().clone();
-        let diff_mag = diff_vec.magnitude();
-        let dist = estimate_rtt(&self.coordinate, &coord).as_secs_f64();
-        let relative_error = (dist - rtt.as_secs_f64()).abs() / rtt.as_secs_f64();
+        let predict_rtt = estimate_rtt(&self.coordinate, &coord).as_millis() as f64;
+        let relative_error = (predict_rtt - rtt).abs() / rtt;
 
         // Update weighted moving average of local error (3)
         //
         // 		ei = es × ce × w + ei × (1 − ce × w)
         //
-        let error = relative_error * ERROR_LIMIT * weight
+        let mut error = relative_error * ERROR_LIMIT * weight
             + self.coordinate.error() * (1.0 - ERROR_LIMIT * weight);
+
+        if error < MIN_ERROR {
+            error = MIN_ERROR;
+        }
 
         // Calculate the adaptive timestep (part of 4)
         //
@@ -114,8 +108,8 @@ where
         //
         // 		δ × ( rtt − ||xi − xj|| )
         //
-        let weighted_force = weighted_error * (rtt.as_secs_f64() - dist);
-        if weighted_force > 0.1 {
+        let weighted_force = weighted_error * (rtt - predict_rtt);
+        if weighted_force > 100.0 {
             debug!("Coordinate: detect massive force, no update");
             return Default::default();
         }
@@ -124,20 +118,26 @@ where
         //
         // 		u(xi − xj)
         //
-        let unit_vec = unit_vector_for(self.coordinate.vector().clone(), coord.vector().clone());
-        let unit_vec = match unit_vec {
-            Some(v) => v,
-            None => new_random_unit_vec(),
+        let v = self.coordinate.vector().clone() - coord.vector().clone();
+        let unit_v = match v.is_zero() || predict_rtt.abs() <= FLOAT_ZERO {
+            true => V::new_random_unit_vec(),
+            false => {
+                assert!(predict_rtt.abs() > FLOAT_ZERO);
+                v.clone() / predict_rtt
+            }
         };
 
         // Calculate the new height of the local node:
         //
         //      (Old height + coord.Height) * weighted_force / diff_mag.0 + old height
         //
-        let mut new_height = self.coordinate.height();
-        if diff_mag.0 > FLOAT_ZERO {
-            new_height = (self.coordinate.height() + coord.height()) * weighted_force / diff_mag.0
-                + self.coordinate.height();
+        let mut new_height = match v.is_zero() || predict_rtt.abs() <= FLOAT_ZERO {
+            true => self.coordinate.height() + coord.height(),
+            false => self.coordinate.height() + 
+                (self.coordinate.height() + coord.height()) * weighted_force / predict_rtt,
+        };
+        if new_height < 0.0 {
+            new_height = 0.0
         }
 
         // Update the local coordinate (4)
@@ -145,13 +145,13 @@ where
         // 		xi = xi + δ × ( rtt − ||xi − xj|| ) × u(xi − xj)
         //
         self.coordinate = Coordinate::new(
-            self.coordinate.vector().clone() + unit_vec.0.clone() * weighted_force,
+            self.coordinate.vector().clone() + unit_v.clone() * weighted_force,
             error,
             new_height,
         );
 
         // return the force applied to the model
-        unit_vec.0.clone() * weighted_force
+        unit_v.clone() * weighted_force
 
         // TODO: add gravity
     }
@@ -179,94 +179,86 @@ where
     // Apply the fixed cost height
     let diff = diff.magnitude().0 + a.height() + b.height();
 
-    Duration::from_secs_f64(diff)
-}
-
-/// A returns a random unit vector.
-fn new_random_unit_vec<V: Vector>() -> UnitVector<V> {
-    loop {
-        let vec = V::random();
-        let mag = vec.magnitude().0;
-        if mag > FLOAT_ZERO {
-            return UnitVector::new(vec / mag);
-        }
-    }
-}
-
-/// Returns the unit vector, or None if the division by zero is likely or the
-/// magnitude too small to generate an accurate vector.
-fn unit_vector_for<V: Vector>(from: V, to: V) -> Option<UnitVector<V>> {
-    let diff = from - to;
-
-    let mag = diff.magnitude().0;
-    if mag < FLOAT_ZERO {
-        return None;
-    }
-
-    Some(UnitVector::new(diff / mag))
+    Duration::from_millis(diff as u64)
 }
 
 #[cfg(test)]
 mod tests {
+    use rand::thread_rng;
+
     use super::*;
+    use crate::FLOAT_ZERO;
+    use crate::vector::Dimension2;
     use crate::vector::Dimension3;
 
-    macro_rules! reciprocal_measurements {
-        ($node_a:ident, $node_b:ident, $n:expr, $rtt:ident) => {
-            for _ in 0..$n {
-                $node_a.observe(&$node_b.get_coordinate(), $rtt);
-                $node_b.observe(&$node_a.get_coordinate(), $rtt);
+    fn random_n_test(n: usize) {
+        let mut real_coord = Vec::new();
+        let mut model = Vec::new();
+
+        for _ in 0..n {
+            real_coord.push(Dimension3::random());
+            model.push(Model::<Dimension3>::new());
+        }
+
+        for _round in 0..20 {
+            for x in 0..n {
+                for _trial in 0..16 {
+                    let mut rng = rand::thread_rng();
+                    let y = rng.gen_range(0, n);
+                    if x == y {
+                        continue;
+                    }
+
+                    let rtt = (real_coord[x].clone() - real_coord[y].clone()).magnitude().0;
+                    let remote_coord = model[y].get_coordinate().clone();
+
+                    model[x].observe(
+                        &remote_coord, Duration::from_millis(rtt as u64),
+                    );
+                }
             }
-        };
+        }
+
+
+        let mut err_stat = Vec::new();
+        for i in 0..n {
+            if i == 0 {
+                println!("coordinate 0 = {:?}", model[i].get_coordinate());
+            }
+            for j in (i + 1)..n {
+                let estimate_rtt = estimate_rtt(model[i].get_coordinate(), model[j].get_coordinate()).as_millis() as f64;
+                let real_rtt = (real_coord[i].clone() - real_coord[j].clone()).magnitude().0;
+                if real_rtt > FLOAT_ZERO {
+                    let abs_err = (estimate_rtt - real_rtt).abs() / real_rtt;
+                    err_stat.push(abs_err);
+                }
+            }
+        }
+        err_stat.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        for i in 1..10 {
+            let err = err_stat[err_stat.len() / 10 * i];
+            println!("{}% error = {}", i * 10, err);
+        }
+
+        assert!(err_stat[err_stat.len() / 2] < 0.3);
     }
 
-    macro_rules! assert_within {
-        ($node_a:ident, $node_b:ident, $true_value: expr, $max_diff: expr) => {
-            let estimated_rtt = estimate_rtt(&$node_a.get_coordinate(), &$node_b.get_coordinate());
-
-            let estimation_error = $true_value / estimated_rtt.as_secs_f64();
-            let estimation_error = estimation_error.abs();
-
-            println!("true rtt value:\t{}", $true_value);
-            println!("estimated ett:\t{}", estimated_rtt.as_secs_f64());
-            println!("error percentage:\t{:.1}", (1.0 - estimation_error) * 100.0);
-
-            assert!(
-                estimation_error < (1.0 + $max_diff),
-                format!("estimation error {} is above spec", estimation_error)
-            );
-            assert!(
-                estimation_error > (1.0 - $max_diff),
-                format!("estimation error {} is below spec", estimation_error)
-            );
-        };
+    #[test] 
+    fn random_10_test() {
+        random_n_test(10);
     }
 
-    macro_rules! assert_within_spec {
-        ($node_a:ident, $node_b:ident, $true_value: expr) => {
-            // By default, assert to within 11.5%
-            //
-            // The paper states the median relative error of RTT estimates is
-            // ~11%.
-            assert_within!($node_a, $node_b, $true_value, 0.115);
-        };
+    #[test] 
+    fn random_100_test() {
+        random_n_test(100);
     }
 
-    #[test]
-    fn unit_vector_to() {
-        let from = Dimension3([1.0, 2.0, 3.0]);
-        let to = Dimension3([0.5, 1.5, 2.5]);
-
-        assert_eq!(
-            unit_vector_for(from, to),
-            Some(UnitVector(Dimension3([
-                0.5773502691896258,
-                0.5773502691896258,
-                0.5773502691896258,
-            ])))
-        );
+    #[test] 
+    fn random_1000_test() {
+        random_n_test(1000);
     }
 
+    /*
     #[test]
     fn independent_coords() {
         let mut a = Model::<Dimension3>::new();
@@ -283,110 +275,5 @@ mod tests {
             a.get_coordinate().vector().0[2]
         )
     }
-
-    #[test]
-    fn vector_height_values() {
-        #![allow(non_snake_case)]
-
-        let mut dc1_A = Model::<Dimension3>::new();
-        let mut dc1_B = Model::<Dimension3>::new();
-        let mut dc2_C = Model::<Dimension3>::new();
-
-        let fast_rtt = Duration::new(1, 0);
-        let slow_rtt = Duration::new(5, 0);
-
-        reciprocal_measurements!(dc1_A, dc1_B, 1, fast_rtt);
-        reciprocal_measurements!(dc1_A, dc2_C, 1, slow_rtt);
-        reciprocal_measurements!(dc1_B, dc2_C, 1, slow_rtt);
-
-        let dc1_A_height = dc1_A.get_coordinate().height();
-        let dc1_B_height = dc1_B.get_coordinate().height();
-        let dc2_C_height = dc2_C.get_coordinate().height();
-
-        reciprocal_measurements!(dc1_A, dc1_B, 1, fast_rtt);
-        reciprocal_measurements!(dc1_A, dc2_C, 1, slow_rtt);
-        reciprocal_measurements!(dc1_B, dc2_C, 1, slow_rtt);
-
-        assert_ne!(dc1_A.get_coordinate().height(), dc1_A_height);
-        assert_ne!(dc1_B.get_coordinate().height(), dc1_B_height);
-        assert_ne!(dc2_C.get_coordinate().height(), dc2_C_height);
-    }
-
-    #[test]
-    fn constant_rtt_2_node_simulation() {
-        let rtt = Duration::new(1, 0);
-
-        let mut node_a = Model::<Dimension3>::new();
-        let mut node_b = Model::<Dimension3>::new();
-
-        reciprocal_measurements!(node_a, node_b, 10, rtt);
-
-        assert_within_spec!(node_a, node_b, rtt.as_secs_f64());
-        assert_within_spec!(node_b, node_a, rtt.as_secs_f64());
-    }
-
-    #[test]
-    fn constant_rtt_2x2_node_simulation() {
-        #![allow(non_snake_case)]
-
-        // Simulates 2 nodes that are close together speaking to a node over a
-        // high latency link (think DC to DC).
-
-        let mut dc1_A = Model::<Dimension3>::new();
-        let mut dc1_B = Model::<Dimension3>::new();
-
-        let mut dc2_C = Model::<Dimension3>::new();
-
-        let fast_rtt = Duration::new(1, 0);
-        let slow_rtt = Duration::new(5, 0);
-
-        for _ in 0..100 {
-            reciprocal_measurements!(dc1_A, dc1_B, 1, fast_rtt);
-            reciprocal_measurements!(dc1_A, dc2_C, 1, slow_rtt);
-            reciprocal_measurements!(dc1_B, dc2_C, 1, slow_rtt);
-        }
-
-        assert_within_spec!(dc1_A, dc1_B, fast_rtt.as_secs_f64());
-        assert_within_spec!(dc1_A, dc2_C, slow_rtt.as_secs_f64());
-        assert_within_spec!(dc1_B, dc1_A, fast_rtt.as_secs_f64());
-        assert_within_spec!(dc2_C, dc1_A, slow_rtt.as_secs_f64());
-        assert_within_spec!(dc1_B, dc2_C, slow_rtt.as_secs_f64());
-        assert_within_spec!(dc2_C, dc1_B, slow_rtt.as_secs_f64());
-    }
-
-    #[test]
-    fn constant_rtt_2x2_node_simulation_estimate_never_communicated() {
-        #![allow(non_snake_case)]
-
-        // Simulates 2 nodes that are close together speaking to a node over a
-        // high latency link (think DC to DC).
-        //
-        // dc1_B and dc2_C never communicate, but their RTT can be estimated.
-
-        let mut dc1_A = Model::<Dimension3>::new();
-        let mut dc1_B = Model::<Dimension3>::new();
-
-        let mut dc2_C = Model::<Dimension3>::new();
-
-        let fast_rtt = Duration::new(1, 0);
-        let slow_rtt = Duration::new(5, 0);
-
-        for _ in 0..100 {
-            reciprocal_measurements!(dc1_A, dc1_B, 1, fast_rtt);
-            reciprocal_measurements!(dc1_A, dc2_C, 1, slow_rtt);
-        }
-
-        assert_within_spec!(dc1_A, dc1_B, fast_rtt.as_secs_f64());
-        assert_within_spec!(dc1_A, dc2_C, slow_rtt.as_secs_f64());
-        assert_within_spec!(dc1_B, dc1_A, fast_rtt.as_secs_f64());
-        assert_within_spec!(dc2_C, dc1_A, slow_rtt.as_secs_f64());
-
-        // Two nodes that have never communicated can estimate the rtt, but to a
-        // lesser accuracy.
-        //
-        // This verifies the nodes are within ±25%. With more nodes
-        // communicating, the estimation would become increasingly accurate.
-        assert_within!(dc1_B, dc2_C, slow_rtt.as_secs_f64(), 0.25);
-        assert_within!(dc2_C, dc1_B, slow_rtt.as_secs_f64(), 0.25);
-    }
+    */
 }

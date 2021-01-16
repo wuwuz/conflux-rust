@@ -2,6 +2,7 @@ use super::*;
 use rand::Rng;
 use std::ops::Div;
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
+use crate::{FLOAT_ZERO};
 //use malloc_size_of_derive::MallocSizeOf as DeriveMallocSizeOf;
 
 /// A 2 dimensional Euclidean vector.
@@ -36,10 +37,20 @@ impl Vector for Dimension2 {
     }
 
     fn random() -> Self {
+        let mut rng = rand::thread_rng();
         Dimension2([
-            rand::thread_rng().gen::<f64>(),
-            rand::thread_rng().gen::<f64>(),
+            rng.gen_range(0.0, 500.0),
+            rng.gen_range(0.0, 500.0),
         ])
+    }
+
+    fn is_zero(&self) -> bool {
+        self.magnitude().0.abs() < FLOAT_ZERO
+    }
+
+    fn new_random_unit_vec() -> Self {
+        let v = Self::random();
+        v / v.magnitude().0
     }
 }
 

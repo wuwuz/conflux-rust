@@ -24,6 +24,12 @@ pub trait Vector:
 
     /// Returns a random vector.
     fn random() -> Self;
+
+    /// Check if a vector is zero vector
+    fn is_zero(&self) -> bool;
+
+    /// Return a random unit vector
+    fn new_random_unit_vec() -> Self;
 }
 
 /// Magnitude is a newtype alias holding the magnitude value of a vector.

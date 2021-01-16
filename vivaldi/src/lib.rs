@@ -65,3 +65,5 @@ pub mod vector;
 
 pub use coordinate::*;
 pub use model::*;
+
+const FLOAT_ZERO: f64 = 1.0e-8;
