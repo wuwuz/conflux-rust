@@ -408,10 +408,6 @@ impl CoordinateManager {
             return Err("rtt < 0".into())
         }
         debug!("Coordinate: receive Coordinate Pong from {:?}, random = {}, original_rtt={} ms", &from, &packet_random_num, &rtt);
-        if rtt == 0 {
-            debug!("Coordinate: receive Coordinate Pong from {:?} 0ms!", &from);
-            rtt += 10;
-        }
         /*
         // simulate a 3 cluster
         let self_group_id = self.id.to_low_u64_le() % 3;
@@ -462,7 +458,7 @@ impl CoordinateManager {
                 //debug!("history = {:?}", history);
                 let mut model = self.vivaldi_model.write();
                 let med = history.get_median();
-                debug!("Coordinate: the median is {}", med);
+                debug!("Coordinate: the median rtt from {:?} is {}", &from, med);
                 model.observe(&recv_coordinate, Duration::from_millis(history.get_median()));
                 debug!("Coordinate: new Coord = {:?}", model.get_coordinate());
                 COORDINATE_ERROR_METER.update((model.get_coordinate().error() * 1000.0) as usize);

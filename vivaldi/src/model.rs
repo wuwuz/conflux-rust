@@ -85,7 +85,20 @@ where
         // 		es = | ||xi -  xj|| - rtt | / rtt
         //
         let predict_rtt = estimate_rtt(&self.coordinate, &coord).as_millis() as f64;
+
+        if (predict_rtt - rtt).abs() < 10.0 {
+            debug!("Coordinate Model: error is too small = {}ms, no need to update", (predict_rtt - rtt).abs());
+            return V::random()
+        }
+
+        if rtt < 10.0 {
+            debug!("Coordiante Model: real rtt is too small. Use a fixed rtt(10ms) to update.");
+            rtt = 10.0
+        }
+
         let relative_error = (predict_rtt - rtt).abs() / rtt;
+
+        debug!("Coordinate Model: real rtt = {}ms, predict rtt = {}ms, rel err = {}", rtt, predict_rtt, relative_error);
 
         // Update weighted moving average of local error (3)
         //
