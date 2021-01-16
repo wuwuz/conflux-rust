@@ -2177,7 +2177,6 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 });
             }
             COORDINATE_CLUSTER => {
-                /*
                 let self_coord = self.vivaldi_model.read().get_coordinate().clone();
                 {
                     self.node_db.write().cluster_all_node(self.config.cluster_num, self.metadata.id().clone(), self_coord);
@@ -2187,7 +2186,6 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                     *cluster_result = self.node_db.read().get_cluster_result().clone();
                 }
                 self.connect_cluster_peers(io);
-                */
             }
             NODE_TABLE => {
                 trace!("Refreshing node table");
