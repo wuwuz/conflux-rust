@@ -1123,8 +1123,10 @@ impl NetworkServiceInner {
             started += 1;
         }
         debug!(
-            "Connecting peers: {} sessions, {} pending + {} started",
+            "Connecting peers: {} sessions, including {} egress, {} ingress, {} pending + {} started",
             egress_count + ingress_count,
+            egress_count,
+            ingress_count,
             handshake_count,
             started
         );
@@ -1254,8 +1256,10 @@ impl NetworkServiceInner {
             debug!("connect cluster peers: connect to new first hop peer {:?}", &id);
         }
         debug!(
-            "connect cluster peers: {} sessions, {} pending + {} started",
+            "connect cluster peers: {} sessions, including {} egress, {} ingress, {} pending + {} started",
             egress_count + ingress_count,
+            egress_count,
+            ingress_count,
             handshake_count,
             started
         );
@@ -2105,20 +2109,26 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 }
             }
             DISCOVERY_ROUND => {
-                if let Some(d) = self.discovery.lock().as_mut() {
-                    d.round(&UdpIoContext::new(
-                        &self.udp_channel,
-                        &self.node_db,
-                        &self.vivaldi_model,
-                        Some(io), 
-                        self,
-                    ))
-                }
+                debug!("test discovery: now it has {} sessions", self.sessions.count());
+                if self.sessions.count() >= 4 {
+                    // Only for testing -- discover only after connect to the initial peers
+                    if let Some(d) = self.discovery.lock().as_mut() {
+                        d.round(&UdpIoContext::new(
+                            &self.udp_channel,
+                            &self.node_db,
+                            &self.vivaldi_model,
+                            Some(io), 
+                            self,
+                        ))
+                    }
 
-                // why register another udp stream? 
-                io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
-                    debug!("Error updating discovery registration: {:?}", e)
-                });
+                    // why register another udp stream? 
+                    io.update_registration(UDP_MESSAGE).unwrap_or_else(|e| {
+                        debug!("Error updating discovery registration: {:?}", e)
+                    });
+                } else {
+                    let (_, _, _) = self.sessions.stat_with_id(&self.node_id_to_test_id);
+                }
             }
             COORDINATE_REFRESH => {
                 let mut coordinate_manager = self.coordinate_manager.lock();

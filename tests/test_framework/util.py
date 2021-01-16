@@ -566,7 +566,7 @@ def checktx(node, tx_hash):
     return node.cfx_getTransactionReceipt(tx_hash) is not None
 
 
-def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, timeout=30):
+def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, timeout=120):
     """
     Establish connections among nodes with each node having 'sample' outgoing peers.
     It first lets all the nodes link as a loop, then randomly pick 'sample-1'
@@ -614,6 +614,7 @@ def connect_sample_nodes(nodes, log, sample=3, latency_min=0, latency_max=300, t
         t.start()
         threads.append(t)
 
+    print("Connect thread timeout is", timeout)
     for t in threads:
         t.join(timeout)
         assert not t.is_alive(), "Node[{}] connect to other nodes timeout in {} seconds".format(t.a, timeout)
