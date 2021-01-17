@@ -89,3 +89,4 @@ overflow-checks = true
 
 [profile.release]
 overflow-checks = true
+panic = "abort"

@@ -993,6 +993,7 @@ impl NetworkServiceInner {
                 self.config.discovery_round_timeout,
             )?;
 
+            /*
             io.register_timer(
                 COORDINATE_REFRESH,
                 DEFAULT_COORDINATE_REFRESH_TIMEOUT,
@@ -1005,6 +1006,7 @@ impl NetworkServiceInner {
                 COORDINATE_CLUSTER,
                 self.config.cluster_round_timeout,
             )?;
+            */
         }
         io.register_timer(NODE_TABLE, self.config.node_table_timeout)?;
         io.register_timer(CHECK_SESSIONS, DEFAULT_CHECK_SESSIONS_TIMEOUT)?;
