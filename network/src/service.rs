@@ -993,7 +993,6 @@ impl NetworkServiceInner {
                 self.config.discovery_round_timeout,
             )?;
 
-            /*
             io.register_timer(
                 COORDINATE_REFRESH,
                 DEFAULT_COORDINATE_REFRESH_TIMEOUT,
@@ -1002,6 +1001,7 @@ impl NetworkServiceInner {
                 COORDINATE_UPDATE,
                 self.config.coordinate_update_timeout,
             )?;
+            /*
             io.register_timer(
                 COORDINATE_CLUSTER,
                 self.config.cluster_round_timeout,
