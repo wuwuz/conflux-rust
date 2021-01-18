@@ -1183,63 +1183,51 @@ impl NetworkServiceInner {
                     continue;
                 }
             };
-            match s.peer_type {
-                PeerLayerType::Fast => {
-                    let group_id = match self.cluster_result.read().get(id) {
-                        None => continue,
-                        Some(id) => id.clone(),
-                    };
-                    if inner_cluster_connection_cnt == self.config.fast_peer_local_group 
-                        || group_id != self_group_id 
-                    {
-                        killing_peers.push(id.clone());
-                    } else {
-                        debug!("connect cluster peers: session id = {:?}, type = {:?}, group = {}", id, peer_type, group_id);
-                        inner_cluster_connection_set.insert(id.clone());
-                        inner_cluster_connection_cnt += 1;
-                    }
-
-                }
-                PeerLayerType::FastRoot => {
-                    if first_hop_connection_cnt == self.config.first_hop_peers {
-                        first_hop_connection_cnt += 1;
-                    }
-                }
-                _ => {
-                }
+            let group_id = match self.cluster_result.read().get(id) {
+                None => continue,
+                Some(id) => id.clone(),
+            };
+            if group_id == self_group_id {
+                debug!("connect cluster peers: session id = {:?}, type = {:?}, group = {}", id, peer_type, group_id);
+                inner_cluster_connection_set.insert(id.clone());
+                inner_cluster_connection_cnt += 1;
             }
         }
 
         debug!("connect cluster peers: inner cluster = {:?}", inner_cluster_connection_cnt);
-        debug!("connect cluster peers: first hop = {:?}", first_hop_connection_cnt);
+        //debug!("connect cluster peers: first hop = {:?}", first_hop_connection_cnt);
 
+        /*
         // 2. kill extra session
         for peer in killing_peers.iter() {
             debug!("connect cluster peers: killing peers = {:?}", &peer);
             self.kill_connection(peer, io, true, None, "Exceed cluster upper bound");
         }
+        */
 
         // 3. sample new peers
         let mut started = 0;
 
         //3.a) connect to inner cluster peers
-        let sample_count = self.config.fast_peer_local_group - inner_cluster_connection_cnt;
-        debug!("connect cluster peers: need to sample {} peers in local group", sample_count);
-        let group_samples = self.node_db.read().sample_trusted_node_ids_within_group(
-            sample_count as u32, 
-            self_group_id as usize,
-            &inner_cluster_connection_set,
-            &self.config.ip_filter,
-        );
-        for id in group_samples
-            .iter()
-            .filter(|id| !self.sessions.contains_node(id) && **id != self_id) 
-        {
-            self.connect_peer(&id, io, Some(PeerLayerType::Fast));
-            started += 1;
-            debug!("connect cluster peers: connect to new local cluster peer {:?}", &id);
+        if inner_cluster_connection_cnt < self.config.fast_peer_local_group {
+            let sample_count = self.config.fast_peer_local_group - inner_cluster_connection_cnt; debug!("connect cluster peers: need to sample {} peers in local group", sample_count);
+            let group_samples = self.node_db.read().sample_trusted_node_ids_within_group(
+                sample_count as u32, 
+                self_group_id as usize,
+                &inner_cluster_connection_set,
+                &self.config.ip_filter,
+            );
+            for id in group_samples
+                .iter()
+                .filter(|id| !self.sessions.contains_node(id) && **id != self_id) 
+            {
+                self.connect_peer(&id, io, None);
+                started += 1;
+                debug!("connect cluster peers: connect to new local cluster peer {:?}", &id);
+            }
         }
 
+        /*
         //3.b) connect to first hop peers
         let random_sample_count = self.config.first_hop_peers - first_hop_connection_cnt;
         let random_samples = self.node_db.read().sample_trusted_node_ids(
@@ -1254,10 +1242,11 @@ impl NetworkServiceInner {
                 self.config.max_handshakes.saturating_sub(handshake_count),
             ))
         {
-            self.connect_peer(&id, io, Some(PeerLayerType::FastRoot));
+            self.connect_peer(&id, io, None);
             started += 1;
             debug!("connect cluster peers: connect to new first hop peer {:?}", &id);
         }
+        */
         debug!(
             "connect cluster peers: {} sessions, including {} egress, {} ingress, {} pending + {} started",
             egress_count + ingress_count,
