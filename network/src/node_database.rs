@@ -515,18 +515,20 @@ impl NodeDatabase {
             self.cluster_group[*group_id].insert(id.clone());
         }
 
-        /*
         let mut i = 0;
         for group in self.cluster_group.iter() {
             let mut group_coord = Vec::new();
             for id in group.iter() {
-                let coord = self.node_coordinate.get(id).unwrap();
-                group_coord.push(coord.vector().clone());
+                match self.node_coordinate.get(id) {
+                    Some(coord) => {
+                        group_coord.push(coord.vector().clone());
+                    }
+                    None => {}
+                }
             }
             debug!("cluster group {} : {:?}", i, group_coord);
             i += 1;
         }
-        */
     }
 
     // K-mean++ algorithm

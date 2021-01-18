@@ -72,10 +72,6 @@ where
     /// return the force applied to the coordinate
     pub fn observe(&mut self, coord: &Coordinate<V>, rtt: Duration) -> V {
         let mut rtt = rtt.as_millis() as f64;
-        if rtt.abs() < FLOAT_ZERO {
-            rtt = 1.0; // add a very small latency
-            //return V::random()
-        }
         // Sample weight balances local and remote error (1)
         //
         // 		w = ei/(ei + ej)
@@ -88,10 +84,8 @@ where
         //
         let predict_rtt = estimate_rtt(&self.coordinate, &coord).as_millis() as f64;
 
-        if (predict_rtt - rtt).abs() < 10.0 {
-            debug!("Coordinate Model: error is too small = {}ms, no need to update", (predict_rtt - rtt).abs());
-            return V::random()
-        }
+        /*
+        */
 
         if rtt < 10.0 {
             debug!("Coordiante Model: real rtt is too small. Use a fixed rtt(10ms) to update.");
@@ -162,14 +156,23 @@ where
         //
         // 		xi = xi + δ × ( rtt − ||xi − xj|| ) × u(xi − xj)
         //
-        self.coordinate = Coordinate::new(
-            self.coordinate.vector().clone() + unit_v.clone() * weighted_force,
-            error,
-            new_height,
-        );
-
-        // return the force applied to the model
-        unit_v.clone() * weighted_force
+        if (predict_rtt - rtt).abs() < 10.0 {
+            debug!("Coordinate Model: error is too small = {}ms, no need to update", (predict_rtt - rtt).abs());
+            self.coordinate = Coordinate::new(
+                self.coordinate.vector().clone(),
+                error,
+                self.coordinate.height(),
+            );
+            V::random()
+        } else {
+            self.coordinate = Coordinate::new(
+                self.coordinate.vector().clone() + unit_v.clone() * weighted_force,
+                error,
+                new_height,
+            );
+            // return the force applied to the model
+            unit_v.clone() * weighted_force
+        }
 
         // TODO: add gravity
     }
