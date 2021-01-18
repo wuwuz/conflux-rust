@@ -931,7 +931,8 @@ impl NetworkServiceInner {
         let self_coord = &all_coordinate[self_index];
         for i in 0..total_node {
             if i != self_index {
-                let dist_ms = self_coord.distance_to_ms(&all_coordinate[i]);
+                // enlarge the latency!
+                let dist_ms = self_coord.distance_to_ms(&all_coordinate[i]) * 2.0; 
                 debug!("add latency: id = {:?}, latency = {:?}", all_node_id[i], dist_ms);
                 self.add_latency(all_node_id[i], dist_ms)?;
             }
