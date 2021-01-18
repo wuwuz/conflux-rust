@@ -1188,7 +1188,7 @@ impl NetworkServiceInner {
                     let group_id = match self.cluster_result.read().get(id) {
                         None => continue,
                         Some(id) => id.clone(),
-                    }
+                    };
                     if inner_cluster_connection_cnt == self.config.fast_peer_local_group 
                         || group_id != self_group_id 
                     {
