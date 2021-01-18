@@ -5,7 +5,7 @@
 use super::DisconnectReason;
 use crate::{
     discovery::{Discovery, DISCOVER_NODES_COUNT},
-    coordinate::CoordinateManager,
+    coordinate::{CoordinateManager, COORDINATE_NEIGHBOR_COUNT},
     handshake::BYPASS_CRYPTOGRAPHY,
     io::*,
     ip_utils::{map_external_address, select_public_address},
@@ -2147,31 +2147,36 @@ impl IoHandler<NetworkIoMessage> for NetworkServiceInner {
                 // decoupling..
 
                 let sessions = self.sessions.all();
-                //let mut sess_ids = Vec::new();
+                let mut sess_ids = Vec::new();
                 let mut sess_node_entries = Vec::new();
 
-                /*
                 for sess in sessions.iter() {
                     sess_ids.push(sess.read().metadata.id.clone());
                 }
 
+                let mut cnt = 0;
                 for id in sess_ids.iter() {
+                    if cnt >= COORDINATE_NEIGHBOR_COUNT {
+                        break;
+                    }
                     //assert!(id.is_some());
                     if id.is_some() {
                         //debug!("coordinate update: session id = {:?}", id);
                         let id = id.unwrap();
                         let node_db = self.node_db.read();
-                        let node = node_db.get(&id, false).unwrap();
-                        let entry = NodeEntry {
-                            id: id.clone(),
-                            endpoint: node.endpoint.clone(),
-                        };
-                        sess_node_entries.push(entry);
+                        let node = node_db.get(&id, false);
+                        if node.is_some() {
+                            let entry = NodeEntry {
+                                id: id.clone(),
+                                endpoint: node.unwrap().endpoint.clone(),
+                            };
+                            sess_node_entries.push(entry);
+                            cnt += 1;
+                        }
                     } else {
                         debug!("Coordinate Update: No ID available");
                     }
                 }
-                */
 
                 let mut coordinate_manager = self.coordinate_manager.lock();
                 coordinate_manager.round(

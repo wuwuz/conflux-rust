@@ -44,14 +44,14 @@ const PACKET_PONG: u8 = 2;
 const PING_TIMEOUT: Duration = Duration::from_millis(5000);
 //const PONG_TIMEOUT: Duration = Duration::from_millis(500);
 
-pub const COORDINATE_NEIGHBOR_COUNT: u32 = 16;
+pub const COORDINATE_NEIGHBOR_COUNT: usize = 16;
 const MAX_NODES_PING: usize = 32; // Max nodes to add/ping at once
 const UPDATE_MAX_STEPS: u32 = 5; // Max iterations of coordainte update.
 
 const DEFAULT_THROTTLING_INTERVAL: Duration = Duration::from_secs(1);
 const DEFAULT_THROTTLING_LIMIT_PING: usize = 20;
 const DEFAULT_THROTTLING_LIMIT_FIND_NODES: usize = 10;
-pub const HISTORY_RTT_DATA_WINDOW_SIZE: usize = 5;
+pub const HISTORY_RTT_DATA_WINDOW_SIZE: usize = 10;
 
 struct PingRequest {
     // Time when the request was sent
@@ -528,14 +528,18 @@ impl CoordinateManager {
         };
         if update_round == 0 {
             // the first round -- select neighbor set
-            self.neighbor_set = HashMap::from_iter(
-                uio
-                .node_db
-                .read()
-                .sample_trusted_nodes(COORDINATE_NEIGHBOR_COUNT, &self.ip_filter)
-                .into_iter()
-                .map(|entry| (entry.id.clone(), entry))
-            );
+            if COORDINATE_NEIGHBOR_COUNT > session_node_entries.len() {
+                self.neighbor_set = HashMap::from_iter(
+                    uio
+                    .node_db
+                    .read()
+                    .sample_trusted_nodes((COORDINATE_NEIGHBOR_COUNT - session_node_entries.len()) as u32, &self.ip_filter)
+                    .into_iter()
+                    .map(|entry| (entry.id.clone(), entry))
+                );
+            } else {
+                self.neighbor_set = HashMap::new();
+            }
             
 
             // Add all the entries of the connected sessions
