@@ -515,6 +515,7 @@ impl NodeDatabase {
             self.cluster_group[*group_id].insert(id.clone());
         }
 
+        /*
         let mut i = 0;
         for group in self.cluster_group.iter() {
             let mut group_coord = Vec::new();
@@ -525,6 +526,7 @@ impl NodeDatabase {
             debug!("cluster group {} : {:?}", i, group_coord);
             i += 1;
         }
+        */
     }
 
     // K-mean++ algorithm
@@ -538,6 +540,7 @@ impl NodeDatabase {
         coordinate: &HashMap<NodeId, vivaldi::Coordinate<Dimension2>>, 
         k: usize
     ) -> (HashMap<NodeId, usize>, Vec<vivaldi::vector::Dimension2>) {
+        let k = min(coordinate.len(), k);
         let max_round = 10;
         let mut results: HashMap<NodeId, usize> = HashMap::new();
         let mut centers = Vec::new();
