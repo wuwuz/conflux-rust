@@ -110,6 +110,7 @@ fn main() -> Result<(), String> {
                 "client",
                 "primitives",
                 "io",
+                "vivaldi",
             ]
             .iter()
             {

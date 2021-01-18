@@ -1,8 +1,10 @@
 use crate::{FLOAT_ZERO, coordinate::Coordinate};
 use crate::vector::Vector;
-use std::{time::Duration};
+use std::{time::Duration, cmp::min};
 use rlp::{Decodable, Encodable};
 use rand::Rng;
+#[macro_use]
+use log::debug;
 
 const MIN_ERROR: f64 = 0.1;
 
@@ -96,7 +98,7 @@ where
             rtt = 10.0
         }
 
-        let relative_error = (predict_rtt - rtt).abs() / rtt;
+        let mut relative_error = (predict_rtt - rtt).abs() / rtt;
 
         debug!("Coordinate Model: real rtt = {}ms, predict rtt = {}ms, rel err = {}", rtt, predict_rtt, relative_error);
 
@@ -104,8 +106,11 @@ where
         //
         // 		ei = es × ce × w + ei × (1 − ce × w)
         //
+        if relative_error > 2.0 {
+            relative_error = 2.0
+        }
         let mut error = relative_error * ERROR_LIMIT * weight
-            + self.coordinate.error() * (1.0 - ERROR_LIMIT * weight);
+                + self.coordinate.error() * (1.0 - ERROR_LIMIT * weight);
 
         if error < MIN_ERROR {
             error = MIN_ERROR;
