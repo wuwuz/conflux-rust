@@ -1185,7 +1185,10 @@ impl NetworkServiceInner {
             };
             match s.peer_type {
                 PeerLayerType::Fast => {
-                    let group_id = self.cluster_result.read().get(id).unwrap().clone();
+                    let group_id = match self.cluster_result.read().get(id) {
+                        None => continue,
+                        Some(id) => id.clone(),
+                    }
                     if inner_cluster_connection_cnt == self.config.fast_peer_local_group 
                         || group_id != self_group_id 
                     {
@@ -1677,15 +1680,14 @@ impl NetworkServiceInner {
                 deregister = remote || sess.done();
                 failure_id = sess.id().cloned();
                 let test_id = 
-                    match self.node_id_to_test_id.read().get(&(*sess.id().unwrap())) {
-                        Some(x) => {
-                            x.clone()
-                            //debug!("debug tcp: sending tcp to {}", x);
-                        } 
-                        None => {
-                            66666
-                            //debug!("debug tcp: sending tcp to a node without its test id, node id = {:?}", node_id);
+                    match sess.id() {
+                        Some(id) => {
+                            match self.node_id_to_test_id.read().get(id) {
+                                Some(x) => x.clone(),
+                                None => 66666,
+                            }
                         }
+                        None => 66666,
                     };
                 debug!(
                     "kill connection, deregister = {}, test id = {}, reason = {:?}, session = {:?}, op = {:?}",
