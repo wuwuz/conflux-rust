@@ -183,6 +183,7 @@ build_config! {
         (timeout_observing_period_s, (u64), 600)
         (transaction_request_timeout_ms, (u64), 30_000)
         (tx_maintained_for_peer_timeout_ms, (u64), 600_000)
+        (max_broadcast_peers, (usize), 128)
 
         //only for testing
         (node_id_file, (Option<String>), None)
@@ -656,6 +657,7 @@ impl Configuration {
             sync_expire_block_timeout: Duration::from_secs(
                 self.raw_conf.sync_expire_block_timeout_s,
             ),
+            max_broadcast_peers: self.raw_conf.max_broadcast_peers,
         }
     }
 

@@ -430,6 +430,7 @@ pub struct ProtocolConfiguration {
     pub demote_peer_for_timeout: bool,
     pub max_unprocessed_block_size: usize,
     pub max_chunk_number_in_manifest: usize,
+    pub max_broadcast_peers: usize,
 }
 
 impl SynchronizationProtocolHandler {
@@ -1209,6 +1210,7 @@ impl SynchronizationProtocolHandler {
 
     fn broadcast_message(
         &self, io: &dyn NetworkContext, skip_id: &NodeId, msg: &dyn Message,
+        flooding: bool,
     ) -> Result<(), NetworkError> {
         let mut peer_ids: Vec<NodeId> = self
             .syn
@@ -1247,6 +1249,9 @@ impl SynchronizationProtocolHandler {
             {
                 msg.send(io, &id)?;
                 cnt += 1;
+                if flooding == false && cnt >= self.protocol_config.max_broadcast_peers {
+                    break;
+                }
             }
         }
 
@@ -1388,13 +1393,13 @@ impl SynchronizationProtocolHandler {
         debug!("Broadcasting heartbeat message: {:?}", heartbeat_message);
 
         if self
-            .broadcast_message(io, &Default::default(), &heartbeat_message)
+            .broadcast_message(io, &Default::default(), &heartbeat_message, true)
             .is_err()
         {
             warn!("Error broadcasting heartbeat message");
         }
         if self
-            .broadcast_message(io, &Default::default(), &status_message)
+            .broadcast_message(io, &Default::default(), &status_message, true)
             .is_err()
         {
             warn!("Error broadcasting status message");
@@ -1408,7 +1413,7 @@ impl SynchronizationProtocolHandler {
         debug!("Broadcasting coordinate message: {:?}", coordinate);
 
         if self
-            .broadcast_message(io, &Default::default(), &coordinate)
+            .broadcast_message(io, &Default::default(), &coordinate, true)
             .is_err()
         {
             warn!("Error broadcasting coordinate message");
@@ -1427,6 +1432,7 @@ impl SynchronizationProtocolHandler {
                 io,
                 &Default::default(),
                 new_block_hash_msg.as_ref(),
+                false,
             )
             .unwrap_or_else(|e| {
                 warn!("Error broadcasting blocks, err={:?}", e);
