@@ -1,4 +1,4 @@
 [submodule "tests/extra-test-toolkits"]
 	path = tests/extra-test-toolkits
 	url = https://github.com/wuwuz/conflux-rust-test-toolkits.git
-	branch = localtest
+	branch = extremetest
