@@ -11,6 +11,7 @@ use crate::{
         message::{
             metrics::TX_HANDLE_TIMER, msgid, Context, DynamicCapability,
             Handleable, Key, KeyContainer,
+            metrics::GET_TX_RESPONSE_HANDLE_TIMER,
         },
         request_manager::{AsAny, Request},
         Error, ErrorKind, ProtocolConfiguration, SYNC_PROTO_V1, SYNC_PROTO_V3,
@@ -365,6 +366,7 @@ impl Request for GetTransactions {
 
 impl Handleable for GetTransactions {
     fn handle(self, ctx: &Context) -> Result<(), Error> {
+        let _timer = MeterTimer::time_func(GET_TX_RESPONSE_HANDLE_TIMER.as_ref());
         let transactions = ctx
             .manager
             .request_manager
@@ -501,6 +503,7 @@ impl Request for GetTransactionsFromTxHashes {
 
 impl Handleable for GetTransactionsFromTxHashes {
     fn handle(self, ctx: &Context) -> Result<(), Error> {
+        let _timer = MeterTimer::time_func(GET_TX_RESPONSE_HANDLE_TIMER.as_ref());
         let transactions = ctx
             .manager
             .request_manager
