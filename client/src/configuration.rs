@@ -183,6 +183,7 @@ build_config! {
         (timeout_observing_period_s, (u64), 600)
         (transaction_request_timeout_ms, (u64), 30_000)
         (tx_maintained_for_peer_timeout_ms, (u64), 600_000)
+        (dynamic_first_hop_percentile, (u64), 10)
 
         //only for testing
         (node_id_file, (Option<String>), None)
@@ -622,6 +623,7 @@ impl Configuration {
             max_peers_tx_propagation: self.raw_conf.max_peers_tx_propagation,
             max_cluster_peers_tx_prop: self.raw_conf.fast_peer_local_group,
             max_first_hop_peers_tx_prop: self.raw_conf.first_hop_peers,
+            dynamic_first_hop_percentile: self.raw_conf.dynamic_first_hop_percentile,
             max_downloading_chunks: self.raw_conf.max_downloading_chunks,
             test_mode: self.is_test_mode(),
             dev_mode: self.is_dev_mode(),

@@ -83,6 +83,7 @@ const HEARTBEAT_TIMER: TimerToken = 9;
 pub const CHECK_RPC_REQUEST_TIMER: TimerToken = 11;
 const COORDINATE_TIMER: TimerToken = 12;
 const DELAY_TEST_TIMER: TimerToken = 13;
+const DYNAMIC_FIRST_HOP_TIMER: TimerToken = 14;
 
 const MAX_TXS_BYTES_TO_PROPAGATE: usize = 1024 * 1024; // 1MB
 
@@ -392,6 +393,9 @@ pub struct SynchronizationProtocolHandler {
     #[ignore_malloc_size_of = "not necessary for vivaldi model"]
     //pub vivaldi_model: RwLock<Arc<vivaldi::Model<Dimension2>>>,
     pub vivaldi_model: RwLock<vivaldi::Model<Dimension2>>,
+
+    #[ignore_malloc_size_of = "not necessary for dynamic tx monitor"]
+    pub dynamic_tx_monitor: Arc<Mutex<DynamicTXMonitor>>,
 }
 
 #[derive(Clone, DeriveMallocSizeOf)]
@@ -430,6 +434,7 @@ pub struct ProtocolConfiguration {
     pub demote_peer_for_timeout: bool,
     pub max_unprocessed_block_size: usize,
     pub max_chunk_number_in_manifest: usize,
+    pub dynamic_first_hop_percentile: u64,
 }
 
 impl SynchronizationProtocolHandler {
@@ -465,6 +470,8 @@ impl SynchronizationProtocolHandler {
         //pub coordinate_db: RwLock<HashMap<NodeId, vivaldi::Coordinate<Dimension2>>>,
         let coordinate_db = RwLock::new(HashMap::new());
 
+        let dynamic_tx_monitor = Arc::new(Mutex::new(DynamicTXMonitor::new(protocol_config.dynamic_first_hop_percentile)));
+
         Self {
             protocol_version: SYNCHRONIZATION_PROTOCOL_VERSION,
             protocol_config,
@@ -490,6 +497,7 @@ impl SynchronizationProtocolHandler {
             vivaldi_model,
             coordinate_db,
             network,
+            dynamic_tx_monitor,
         }
     }
 
@@ -1552,7 +1560,42 @@ impl SynchronizationProtocolHandler {
         peers
     }
 
-    fn fast_propagate_origin_transactions_to_cluster_peers(
+    fn update_tx_monitor(&self) {
+        let mut monitor = self.dynamic_tx_monitor.lock();
+        debug!("dynamic: first hop tx num = {}", monitor.first_hop_tx_num);
+        debug!("dynamic: normal tx num = {}", monitor.normal_tx_num);
+        if monitor.first_hop_tx_num == 0 {
+            debug!("dynamic: no need to update because first hop tx = 0");
+            return;
+        }
+        let short_id_size = 4.0; // one short id is 4 bytes
+        let tx_size = 100.0; // one tx size is 100 bytes averagely
+        let mut first_hop_limit = 
+            (monitor.normal_tx_num as f64) * (short_id_size * self.protocol_config.max_peers_tx_propagation as f64 + tx_size) 
+            //* (monitor.dynamic_first_hop_percentile as f64 / 100.0)
+            / (monitor.first_hop_tx_num as f64 * (short_id_size+ tx_size));
+        //debug!("dynamic: without P : {}", &first_hop_limit);
+        first_hop_limit *= monitor.dynamic_first_hop_percentile as f64 / 100.0;
+        let mut first_hop_limit = first_hop_limit as u64;
+        debug!("dynamic: original first hop limit = {}", first_hop_limit);
+
+        let first_hop_tx_usage = first_hop_limit as f64 * (short_id_size + tx_size) * monitor.first_hop_tx_num as f64;
+        let normal_tx_usage = 
+            (monitor.normal_tx_num as f64) * (short_id_size * self.protocol_config.max_peers_tx_propagation as f64 + tx_size);
+        debug!("dynamic: expected first hop usage = {}", first_hop_tx_usage);
+        debug!("dynamic: expected normal hop usage = {}", normal_tx_usage);
+
+        if first_hop_limit < 8 {
+            first_hop_limit = 8;
+            debug!("dynamic: new first hop limit = {}", first_hop_limit);
+        }
+
+        monitor.first_hop_tx_num = 0;
+        monitor.normal_tx_num = 0;
+        monitor.first_hop_limit = first_hop_limit;
+    }
+
+    fn fast_propagate_origin_transactions(
         &self, io: &dyn NetworkContext, 
     ) {
         debug!("TX propagate(fast): start");
@@ -1560,7 +1603,13 @@ impl SynchronizationProtocolHandler {
         //let num_peers = 
         //    .max(self.protocol_config.min_peers_tx_propagation)
         //    .min(self.protocol_config.max_peers_tx_propagation);
-        let num_peers = self.protocol_config.max_first_hop_peers_tx_prop;
+        let mut num_peers = self.protocol_config.max_first_hop_peers_tx_prop;
+        {
+            let monitor = self.dynamic_tx_monitor.lock();
+            if num_peers > monitor.first_hop_limit as usize{
+                num_peers = monitor.first_hop_limit as usize;
+            }
+        }
 
         let lucky_peers = 
             PeerFilter::new(msgid::TRANSACTION_DIGESTS) 
@@ -1651,6 +1700,10 @@ impl SynchronizationProtocolHandler {
         }
 
         TX_PROPAGATE_METER.mark(sent_transactions.len());
+        {
+            let mut monitor = self.dynamic_tx_monitor.lock();
+            monitor.first_hop_tx_num += sent_transactions.len() as u64;
+        }
 
         if sent_transactions.len() == 0 {
             return;
@@ -1816,6 +1869,11 @@ impl SynchronizationProtocolHandler {
             sent_transactions.extend(tx_hashes_transactions.clone());
         }
 
+        {
+            let mut monitor = self.dynamic_tx_monitor.lock();
+            monitor.normal_tx_num += sent_transactions.len() as u64;
+        }
+
         TX_PROPAGATE_METER.mark(sent_transactions.len());
 
         if sent_transactions.len() == 0 {
@@ -1940,7 +1998,7 @@ impl SynchronizationProtocolHandler {
         if self.syn.peers.read().is_empty() || self.catch_up_mode() {
             return;
         }
-        self.fast_propagate_origin_transactions_to_cluster_peers(io);
+        self.fast_propagate_origin_transactions(io);
 
         let peers = self.select_peers_for_transactions(io);
         self.propagate_transactions_to_peers(io, peers);
@@ -2257,6 +2315,11 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
             Duration::from_millis(3000),
         )
         .expect("Error registering COORDINATE_TIMER");
+        io.register_timer(
+            DYNAMIC_FIRST_HOP_TIMER,
+            Duration::from_millis(10000),
+        )
+        .expect("Error registering DYNAMIC_FIRST_HOP_TIMER");
     }
 
     fn send_local_message(&self, io: &dyn NetworkContext, message: Vec<u8>) {
@@ -2419,10 +2482,32 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
                 // FIXME: uncomment the code
                 //self.send_coordinate(io);
             }
+            DYNAMIC_FIRST_HOP_TIMER => {
+                debug!("Dynamic first hop timer!");
+                self.update_tx_monitor();
+            }
             DELAY_TEST_TIMER => {
                 //self.delay_test(io);
             }
             _ => warn!("Unknown timer {} triggered.", timer),
+        }
+    }
+}
+
+pub struct DynamicTXMonitor {
+    pub first_hop_tx_num: u64,
+    pub normal_tx_num: u64,
+    pub dynamic_first_hop_percentile: u64,
+    pub first_hop_limit: u64,
+}
+
+impl DynamicTXMonitor {
+    fn new(dynamic_first_hop_percentile: u64) -> Self {
+        DynamicTXMonitor {
+            first_hop_tx_num: 0, 
+            normal_tx_num: 0, 
+            dynamic_first_hop_percentile,
+            first_hop_limit: 16,
         }
     }
 }
