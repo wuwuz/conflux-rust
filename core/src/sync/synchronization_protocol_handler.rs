@@ -1603,17 +1603,24 @@ impl SynchronizationProtocolHandler {
         //let num_peers = 
         //    .max(self.protocol_config.min_peers_tx_propagation)
         //    .min(self.protocol_config.max_peers_tx_propagation);
-        let mut num_peers = self.protocol_config.max_first_hop_peers_tx_prop;
+        let num_peers = self.protocol_config.max_first_hop_peers_tx_prop;
+
+        /* 
         {
             let monitor = self.dynamic_tx_monitor.lock();
             if num_peers > monitor.first_hop_limit as usize{
                 num_peers = monitor.first_hop_limit as usize;
             }
         }
+        */
 
+        //let lucky_peers = 
+        //    PeerFilter::new(msgid::TRANSACTION_DIGESTS) 
+        //    .select_n(num_peers, &self.syn);
         let lucky_peers = 
             PeerFilter::new(msgid::TRANSACTION_DIGESTS) 
-            .select_n(num_peers, &self.syn);
+            //.select_n(num_peers, &self.syn);
+            .select_all(&self.syn);
 
         if lucky_peers.is_empty() {
             debug!("TX Propagate(fast): No peers");
@@ -2483,8 +2490,8 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
                 //self.send_coordinate(io);
             }
             DYNAMIC_FIRST_HOP_TIMER => {
-                debug!("Dynamic first hop timer!");
-                self.update_tx_monitor();
+                //debug!("Dynamic first hop timer!");
+                //self.update_tx_monitor();
             }
             DELAY_TEST_TIMER => {
                 //self.delay_test(io);
