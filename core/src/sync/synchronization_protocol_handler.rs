@@ -1617,10 +1617,13 @@ impl SynchronizationProtocolHandler {
         //let lucky_peers = 
         //    PeerFilter::new(msgid::TRANSACTION_DIGESTS) 
         //    .select_n(num_peers, &self.syn);
-        let lucky_peers = 
+        let mut lucky_peers = 
             PeerFilter::new(msgid::TRANSACTION_DIGESTS) 
             //.select_n(num_peers, &self.syn);
             .select_all(&self.syn);
+        
+        lucky_peers.truncate(num_peers);
+        
 
         if lucky_peers.is_empty() {
             debug!("TX Propagate(fast): No peers");
