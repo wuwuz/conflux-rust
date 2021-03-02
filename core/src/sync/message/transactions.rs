@@ -18,14 +18,24 @@ use crate::{
 };
 use cfx_types::H256;
 use malloc_size_of_derive::MallocSizeOf as DeriveMallocSizeOf;
-use metrics::MeterTimer;
+//use metrics::MeterTimer;
 use network::service::ProtocolVersion;
 use primitives::{transaction::TxPropagateId, TransactionWithSignature};
 use priority_send_queue::SendQueuePriority;
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
 use rlp_derive::{RlpDecodable, RlpEncodable};
 use siphasher::sip::SipHasher24;
-use std::{any::Any, collections::HashSet, hash::Hasher, time::Duration};
+use std::{any::Any, collections::HashSet, hash::Hasher, time::Duration, sync::Arc};
+use metrics::{
+    register_meter_with_group, register_queue, Meter, MeterTimer, Queue,
+};
+lazy_static! {
+    static ref RECV_TX_METER: Arc<dyn Meter> =
+        register_meter_with_group("system_metrics", "tx_recv_num");
+    static ref SEND_TX_METER: Arc<dyn Meter> =
+        register_meter_with_group("system_metrics", "tx_send_num");
+}
+
 
 #[derive(Debug, PartialEq)]
 pub struct Transactions {
@@ -380,6 +390,9 @@ impl Handleable for GetTransactions {
             transactions,
             tx_hashes,
         };
+
+        SEND_TX_METER.mark(response.transactions.len());
+
         debug!(
             "on_get_transactions request {} txs, {} tx hashes, returned {} txs {} tx hashes",
             self.indices.len(),
@@ -567,6 +580,8 @@ impl Handleable for GetTransactionsResponse {
         )?;
 
         // FIXME: Do some check based on transaction request.
+
+        RECV_TX_METER.mark(self.transactions.len());
 
         debug!(
             "Received {:?} transactions and {:?} tx hashes from Peer {:?}",
