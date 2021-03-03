@@ -18,4 +18,9 @@ lazy_static! {
         register_meter_with_group("timer", "sync:recover_compact_block");
     pub static ref BLOCK_HEADER_HANDLE_TIMER: Arc<dyn Meter> =
         register_meter_with_group("timer", "sync::on_block_headers");
+    
+    pub static ref READ_TX_DIGEST_METER: Arc<dyn Meter> =
+        register_meter_with_group("system_metrics", "read_tx_digest");
+    pub static ref READ_TX_BODY_METER: Arc<dyn Meter> =
+        register_meter_with_group("system_metrics", "read_tx_body");
 }

@@ -16,6 +16,9 @@ use crate::{
 use network::{service::ProtocolVersion, NetworkProtocolHandler};
 pub use priority_send_queue::SendQueuePriority;
 use rlp::{Decodable, Rlp};
+use self::metrics::{
+    READ_TX_BODY_METER, READ_TX_DIGEST_METER,
+};
 
 // generate `pub mod msgid`
 build_msgid! {
@@ -240,6 +243,7 @@ pub fn handle_rlp_message(
             handle_message::<DynamicCapabilityChange>(ctx, rlp)?;
         }
         msgid::TRANSACTION_DIGESTS => {
+            READ_TX_DIGEST_METER.mark(rlp.size());
             handle_message::<TransactionDigests>(ctx, rlp)?;
         }
         msgid::GET_TRANSACTIONS => {
@@ -249,6 +253,7 @@ pub fn handle_rlp_message(
             handle_message::<GetTransactionsFromTxHashes>(ctx, rlp)?;
         }
         msgid::GET_TRANSACTIONS_RESPONSE => {
+            READ_TX_BODY_METER.mark(rlp.size());
             handle_message::<GetTransactionsResponse>(ctx, rlp)?;
         }
         msgid::GET_TRANSACTIONS_FROM_TX_HASHES_RESPONSE => {
