@@ -17,7 +17,7 @@ use network::{service::ProtocolVersion, NetworkProtocolHandler};
 pub use priority_send_queue::SendQueuePriority;
 use rlp::{Decodable, Rlp};
 use self::metrics::{
-    READ_TX_BODY_METER, READ_TX_DIGEST_METER,
+    RECV_TX_BODY_METER, RECV_TX_DIGEST_METER, RECV_OTHER_METER,
 };
 
 // generate `pub mod msgid`
@@ -194,6 +194,19 @@ impl Message for GetTransactionsFromTxHashesResponse {
 pub fn handle_rlp_message(
     id: MsgId, ctx: &Context, rlp: &Rlp,
 ) -> Result<bool, Error> {
+    // firstly mark the meter
+    let msg_size = rlp.as_raw().len();
+    match id {
+        msgid::TRANSACTION_DIGESTS => {
+            RECV_TX_DIGEST_METER.mark(msg_size);
+        }
+        msgid::GET_TRANSACTIONS_RESPONSE => {
+            RECV_TX_BODY_METER.mark(msg_size);
+        }
+        _ => {
+            RECV_OTHER_METER.mark(msg_size);
+        }
+    }
     match id {
         msgid::STATUS_V2 => handle_message::<StatusV2>(ctx, rlp)?,
         msgid::STATUS_V3 => handle_message::<StatusV3>(ctx, rlp)?,
@@ -243,7 +256,6 @@ pub fn handle_rlp_message(
             handle_message::<DynamicCapabilityChange>(ctx, rlp)?;
         }
         msgid::TRANSACTION_DIGESTS => {
-            READ_TX_DIGEST_METER.mark(rlp.size());
             handle_message::<TransactionDigests>(ctx, rlp)?;
         }
         msgid::GET_TRANSACTIONS => {
@@ -253,7 +265,6 @@ pub fn handle_rlp_message(
             handle_message::<GetTransactionsFromTxHashes>(ctx, rlp)?;
         }
         msgid::GET_TRANSACTIONS_RESPONSE => {
-            READ_TX_BODY_METER.mark(rlp.size());
             handle_message::<GetTransactionsResponse>(ctx, rlp)?;
         }
         msgid::GET_TRANSACTIONS_FROM_TX_HASHES_RESPONSE => {

@@ -2337,7 +2337,15 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
             .dispatch(io, LocalMessageTask { message });
     }
 
+    /* 
+    fn metric_recv_message(&self, msg: MsgId, size: usize) {
+        ()
+    }
+    */
+
+
     fn on_message(&self, io: &dyn NetworkContext, peer: &NodeId, raw: &[u8]) {
+        //let raw_size = raw.len();
         let (msg_id, rlp) = match decode_msg(raw) {
             Some(msg) => msg,
             None => {
@@ -2351,6 +2359,8 @@ impl NetworkProtocolHandler for SynchronizationProtocolHandler {
         };
 
         debug!("on_message: peer={}, msgid={:?}", peer, msg_id);
+
+        //self.metric_recv_message(msg_id.into(), raw_size);
 
         self.dispatch_message(io, peer, msg_id.into(), rlp)
             .unwrap_or_else(|e| self.handle_error(io, peer, msg_id.into(), e));
