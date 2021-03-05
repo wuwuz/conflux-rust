@@ -4,8 +4,7 @@
 
 use crate::{
     message::{
-        GetMaybeRequestId, Message, MessageProtocolVersionBound, MsgId,
-        RequestId, SetRequestId,
+        GetMaybeRequestId, Message, MessageProtocolVersionBound, MsgId, RequestId, SetRequestId, SPECIAL_REQUEST_ID,
     },
     sync::{
         message::{
@@ -572,68 +571,100 @@ impl Handleable for GetTransactionsResponse {
         let _timer = MeterTimer::time_func(TX_HANDLE_TIMER.as_ref());
 
         debug!("on_get_transactions_response {:?}", self.request_id);
-
-        let req = ctx.match_request(self.request_id)?;
-        let req = req.downcast_ref::<GetTransactions>(
-            ctx.io,
-            &ctx.manager.request_manager,
-        )?;
-
-        // FIXME: Do some check based on transaction request.
-
         RECV_TX_METER.mark(self.transactions.len());
 
-        debug!(
-            "Received {:?} transactions and {:?} tx hashes from Peer {:?}",
-            self.transactions.len(),
-            self.tx_hashes.len(),
-            ctx.node_id
-        );
-
-        // The transaction pool will rely on the execution state information to
-        // verify transaction validity. It may incorrectly accept/reject
-        // transactions when in the catch up mode because the state is still
-        // not correct. We therefore do not insert transactions when in the
-        // catch up mode.
-        if !ctx.manager.catch_up_mode() {
-            let (signed_trans, failure) = ctx
-                .manager
-                .graph
-                .consensus
-                .get_tx_pool()
-                .insert_new_transactions(self.transactions, false);
-            if failure.is_empty() {
-                debug!(
-                    "Transactions successfully inserted to transaction pool"
-                );
-            } else {
-                debug!(
-                    "{} transactions are rejected by the transaction pool",
-                    failure.len()
-                );
-                for (tx, e) in failure {
-                    trace!("Transaction {} is rejected by the transaction pool: error = {}", tx, e);
+        if self.request_id == SPECIAL_REQUEST_ID {
+            debug!(
+                "GetTransactionsResponse: Directly received {:?} transactions and {:?} tx hashes from Peer {:?}",
+                self.transactions.len(),
+                self.tx_hashes.len(),
+                ctx.node_id
+            );
+            if !ctx.manager.catch_up_mode() {
+                let (_signed_trans, failure) = ctx
+                    .manager
+                    .graph
+                    .consensus
+                    .get_tx_pool()
+                    .insert_new_transactions(self.transactions, false);
+                if failure.is_empty() {
+                    debug!(
+                        "Transactions successfully inserted to transaction pool"
+                    );
+                } else {
+                    debug!(
+                        "{} transactions are rejected by the transaction pool",
+                        failure.len()
+                    );
+                    for (tx, e) in failure {
+                        trace!("Transaction {} is rejected by the transaction pool: error = {}", tx, e);
+                    }
                 }
+                Ok(())
+            } else {
+                debug!("All {} transactions are not inserted to the transaction pool, because the node is still in the catch up mode", self.transactions.len());
+                Err(ErrorKind::InCatchUpMode("transactions discarded for handling on_get_transactions_response messages".to_string()).into())
             }
-            ctx.manager
-                .request_manager
-                .transactions_received_from_digests(ctx.io, &req, signed_trans);
+        } else {
+            debug!(
+                "GetTransactionsResponse: Received {:?} transactions and {:?} tx hashes from Peer {:?}",
+                self.transactions.len(),
+                self.tx_hashes.len(),
+                ctx.node_id
+            );
+            let req = ctx.match_request(self.request_id)?;
+            let req = req.downcast_ref::<GetTransactions>(
+                ctx.io,
+                &ctx.manager.request_manager,
+            )?;
 
-            if req.tx_hashes_indices.len() > 0 && !self.tx_hashes.is_empty() {
+            // FIXME: Do some check based on transaction request.
+
+            // The transaction pool will rely on the execution state information to
+            // verify transaction validity. It may incorrectly accept/reject
+            // transactions when in the catch up mode because the state is still
+            // not correct. We therefore do not insert transactions when in the
+            // catch up mode.
+            if !ctx.manager.catch_up_mode() {
+                let (signed_trans, failure) = ctx
+                    .manager
+                    .graph
+                    .consensus
+                    .get_tx_pool()
+                    .insert_new_transactions(self.transactions, false);
+                if failure.is_empty() {
+                    debug!(
+                        "Transactions successfully inserted to transaction pool"
+                    );
+                } else {
+                    debug!(
+                        "{} transactions are rejected by the transaction pool",
+                        failure.len()
+                    );
+                    for (tx, e) in failure {
+                        trace!("Transaction {} is rejected by the transaction pool: error = {}", tx, e);
+                    }
+                }
                 ctx.manager
                     .request_manager
-                    .request_transactions_from_tx_hashes(
-                        ctx.io,
-                        ctx.node_id.clone(),
-                        self.tx_hashes,
-                        req.window_index,
-                        &req.tx_hashes_indices,
-                    );
+                    .transactions_received_from_digests(ctx.io, &req, signed_trans);
+
+                if req.tx_hashes_indices.len() > 0 && !self.tx_hashes.is_empty() {
+                    ctx.manager
+                        .request_manager
+                        .request_transactions_from_tx_hashes(
+                            ctx.io,
+                            ctx.node_id.clone(),
+                            self.tx_hashes,
+                            req.window_index,
+                            &req.tx_hashes_indices,
+                        );
+                }
+                Ok(())
+            } else {
+                debug!("All {} transactions are not inserted to the transaction pool, because the node is still in the catch up mode", self.transactions.len());
+                Err(ErrorKind::InCatchUpMode("transactions discarded for handling on_get_transactions_response messages".to_string()).into())
             }
-            Ok(())
-        } else {
-            debug!("All {} transactions are not inserted to the transaction pool, because the node is still in the catch up mode", self.transactions.len());
-            Err(ErrorKind::InCatchUpMode("transactions discarded for handling on_get_transactions_response messages".to_string()).into())
         }
     }
 }

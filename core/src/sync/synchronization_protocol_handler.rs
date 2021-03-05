@@ -9,13 +9,14 @@ use super::{
 use crate::{
     block_data_manager::BlockStatus,
     light_protocol::Provider as LightProvider,
-    message::{decode_msg, Message, MsgId},
+    message::{decode_msg, Message, MsgId, RequestId, SPECIAL_REQUEST_ID},
     sync::{
         message::{
             handle_rlp_message, msgid, Context, DynamicCapability,
             GetBlockHeadersResponse, Heartbeat, NewBlockHashes, StatusV2,
             StatusV3, TransactionDigests, CoordinatePing, 
             //TestDelayModelMessage,
+            GetTransactionsResponse,
         },
         node_type::NodeType,
         request_manager::{try_get_block_hashes, Request},
@@ -40,7 +41,7 @@ use network::{
     NetworkContext, NetworkProtocolHandler, UpdateNodeOperation, PeerLayerType,
 };
 use parking_lot::{Mutex, RwLock};
-use primitives::{Block, BlockHeader, EpochId, SignedTransaction};
+use primitives::{Block, BlockHeader, EpochId, SignedTransaction, TransactionWithSignature};
 use rand::{prelude::SliceRandom, Rng};
 use rlp::Rlp;
 use std::{
@@ -49,6 +50,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     iter::FromIterator,
+    thread,
 };
 use vivaldi::{
     vector::Dimension2, 
@@ -1771,6 +1773,70 @@ impl SynchronizationProtocolHandler {
         }
     }
 
+    fn fast_propagate_origin_transactions_directly(
+        &self, io: &dyn NetworkContext, 
+    ) {
+        debug!("TX propagate(directly): start");
+        let num_peers = self.protocol_config.max_first_hop_peers_tx_prop;
+
+        let mut lucky_peers = 
+            PeerFilter::new(msgid::TRANSACTION_DIGESTS) 
+            //.select_n(num_peers, &self.syn);
+            .select_all(&self.syn);
+        
+        lucky_peers.truncate(num_peers);
+        
+
+        if lucky_peers.is_empty() {
+            debug!("TX Propagate(fast): No peers");
+            return;
+        } else {
+            debug!("TX Propagate(fast): Select {} peers", lucky_peers.len());
+        }
+
+        let transactions = self.get_origin_to_propagate_trans();
+        let mut trans: Vec<TransactionWithSignature> = vec![];
+        //let mut trans_hashes: Vec<H256> = vec![];
+        //let mut resend_trans: HashMap<H256, Arc<SignedTransaction>> = HashMap::new();
+
+        for (_tx_hash, tx) in transactions.iter() {
+            trans.push(tx.transaction.clone());
+            //trans_hashes.push(tx_hash.clone());
+        }
+
+        debug!(
+            "TX Propagate(directly): Directly send {} tx",
+            trans.len(),
+        );
+        
+        //let mut resend_flag = false;
+
+        for i in 0..lucky_peers.len() {
+            let peer_id = lucky_peers[i];
+            let tx_msg = GetTransactionsResponse {
+                request_id: SPECIAL_REQUEST_ID,
+                transactions: trans.clone(),
+                //tx_hashes: trans_hashes.clone(),
+                tx_hashes: Vec::new(),
+            };
+            match tx_msg.send(io, &peer_id) {
+                Ok(_) => {
+                    trace!(
+                        "TX Propagate(fast): {:02} <- Transactions ({} entries)",
+                        peer_id,
+                        tx_msg.tx_hashes.len()
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "TX Propagate(fast): failed to propagate transaction ids to peer, id: {}, err: {}",
+                        peer_id, e
+                    );
+                }
+            }
+        }
+    }
+
     fn propagate_transactions_to_peers(
         &self, io: &dyn NetworkContext, peers: Vec<NodeId>,
     ) {
@@ -2008,7 +2074,10 @@ impl SynchronizationProtocolHandler {
         if self.syn.peers.read().is_empty() || self.catch_up_mode() {
             return;
         }
-        self.fast_propagate_origin_transactions(io);
+        //self.fast_propagate_origin_transactions(io);
+        self.fast_propagate_origin_transactions_directly(io);
+
+        //thread::sleep(Duration::from_millis(200));
 
         let peers = self.select_peers_for_transactions(io);
         self.propagate_transactions_to_peers(io, peers);

@@ -3,6 +3,7 @@
 // See http://www.gnu.org/licenses/
 
 pub type RequestId = u64;
+pub const SPECIAL_REQUEST_ID: u64 = 0xFFFFFFFFFF;
 pub type MsgId = u16;
 const MSG_ID_MAX: u16 = 1 << 14;
 
