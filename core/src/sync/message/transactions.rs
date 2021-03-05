@@ -581,7 +581,7 @@ impl Handleable for GetTransactionsResponse {
                 ctx.node_id
             );
             if !ctx.manager.catch_up_mode() {
-                let (_signed_trans, failure) = ctx
+                let (signed_trans, failure) = ctx
                     .manager
                     .graph
                     .consensus
@@ -600,6 +600,9 @@ impl Handleable for GetTransactionsResponse {
                         trace!("Transaction {} is rejected by the transaction pool: error = {}", tx, e);
                     }
                 }
+                ctx.manager
+                    .request_manager
+                    .append_received_transactions(signed_trans);
                 Ok(())
             } else {
                 debug!("All {} transactions are not inserted to the transaction pool, because the node is still in the catch up mode", self.transactions.len());
